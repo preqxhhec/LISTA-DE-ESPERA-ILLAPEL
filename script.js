@@ -319,6 +319,17 @@ function loadPatients() {
 // ====================== VARIABLES GLOBALES DE ORDENAMIENTO ======================
 let currentSortColumn = null;
 let currentSortOrder = 'asc';
+// Variables para mantener filtros al editar
+let lastFilters = {
+    busquedaGeneral: '',
+    filterEspecialidad: '',
+    filterMedico: '',
+    filterEstatus: '',
+    filterFechaDesde: '',
+    filterFechaHasta: '',
+    soloSinFolio: false,
+    mostrarDuplicados: false
+};
 
 // ====================== TABLA CON ORDENAMIENTO POR CLIC ======================
 // ====================== TABLA CON ORDENAMIENTO CORREGIDO ======================
@@ -600,71 +611,90 @@ function showPatientModal(key) {
     currentModalPatient = patients.find(p => p.firebaseKey === key);
     if (!currentModalPatient) return;
 
+    // Formateo de fechas
+    const fechaIndQxFmt     = formatDate(currentModalPatient.fechaIndQx);
+    const fechaNacFmt       = formatDate(currentModalPatient.fechaNac);
+    const fechaEpaFmt       = formatDate(currentModalPatient.fechaEpa);
+    const fechaEstatusProgFmt = formatDate(currentModalPatient.fechaEstatusProgram);
+    const fechaCirugiaFmt   = formatDate(currentModalPatient.fechaCirugia);
+
     // Historial
     let historialHTML = '';
     if (currentModalPatient.historial) {
         const historialArray = Object.values(currentModalPatient.historial)
             .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
 
-        historialHTML = `<h3 style="color:#1e40af; margin:25px 0 12px 0;">📜 Historial de Modificaciones</h3>
-        <div style="max-height:320px; overflow-y:auto; background:#f8fafc; padding:12px; border-radius:8px;">`;
+        historialHTML = `<h3 style="color:#1e40af; margin:30px 0 18px 0; font-size:1.3rem;">📜 Historial de Modificaciones</h3>`;
 
         historialArray.forEach(h => {
             const fecha = new Date(h.fecha);
-            let cambiosHTML = h.cambios ? `<ul style="margin:8px 0; padding-left:20px;">${h.cambios.map(c => `<li>${c}</li>`).join('')}</ul>` : '';
+            let cambiosHTML = h.cambios ? `<ul style="margin:10px 0 0 22px;">${h.cambios.map(c => `<li>${c}</li>`).join('')}</ul>` : '';
             
             historialHTML += `
-                <div style="margin-bottom:12px; padding:12px; background:white; border-radius:6px; border-left:4px solid #3b82f6;">
-                    <strong>${h.accion}</strong> — ${fecha.toLocaleDateString('es-CL')} ${fecha.toLocaleTimeString('es-CL')}<br>
-                    <small><strong>Usuario:</strong> ${h.usuario}</small><br>
-                    ${cambiosHTML || `<small>${h.descripcion || ''}</small>`}
+                <div style="margin-bottom:20px; padding:16px; background:#f8fafc; border-radius:10px; border-left:6px solid #3b82f6;">
+                    <strong>${h.accion}</strong> — ${fecha.toLocaleDateString('es-CL')} ${fecha.toLocaleTimeString('es-CL')}
+                    <br><small style="color:#64748b;">Usuario: ${h.usuario}</small>
+                    ${cambiosHTML}
                 </div>`;
         });
-        historialHTML += `</div>`;
     }
 
     let html = `
-        <h2 style="margin-bottom:20px; color:#1e40af;">📋 Detalle del Paciente</h2>
-        
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-            <div>
-                <h3 style="color:#1e40af; margin-bottom:12px;">📋 Datos Administrativos</h3>
-                <p><strong>ID:</strong> ${currentModalPatient.id || '-'}</p>
-                <p><strong>Estatus Tabla:</strong> ${currentModalPatient.estatusTabla || '-'}</p>
-                <p><strong>Folio:</strong> ${currentModalPatient.folio || '-'}</p>
-                <p><strong>Fecha Indicación Qx:</strong> ${currentModalPatient.fechaIndQx || '-'}</p>
-                <p><strong>Tiempo Espera:</strong> ${calculateWaitingDays(currentModalPatient.fechaIndQx)} días</p>
-            </div>
+        <h2 style="margin:0 0 30px 0; color:#1e40af; text-align:center; font-size:1.7rem;">
+            📋 Detalle Completo del Paciente
+        </h2>
 
-            <div>
-                <h3 style="color:#1e40af; margin-bottom:12px;">👤 Datos del Paciente</h3>
-                <p><strong>Nombre y Apellido:</strong> ${currentModalPatient.nombreApellido || '-'}</p>
-                <p><strong>RUT:</strong> ${currentModalPatient.rut || '-'}</p>
-                <p><strong>Fecha Nacimiento:</strong> ${currentModalPatient.fechaNac || '-'}</p>
-                <p><strong>Edad:</strong> ${currentModalPatient.edad || '-'} años</p>
-                <p><strong>Comuna:</strong> ${currentModalPatient.comuna || '-'}</p>
-                <p><strong>Dirección:</strong> ${currentModalPatient.direccion || '-'}</p>
-                <p><strong>N° Contacto:</strong> ${currentModalPatient.nContacto || '-'}</p>
-                <p><strong>Email:</strong> ${currentModalPatient.emailPaciente || '-'}</p>
-            </div>
+        <!-- 1. DATOS ADMINISTRATIVOS -->
+        <h3 style="color:#1e40af; background:#f1f5f9; padding:12px 20px; border-radius:8px; margin-bottom:18px; border-left:6px solid #3b82f6;">
+            📋 1. Datos Administrativos
+        </h3>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px,1fr)); gap:14px 40px; margin-bottom:35px;">
+            <p><strong>ID:</strong> ${currentModalPatient.id || '-'}</p>
+            <p><strong>Estatus Tabla:</strong> <span style="color:#1e40af; font-weight:600;">${currentModalPatient.estatusTabla || '-'}</span></p>
+            <p><strong>Folio:</strong> ${currentModalPatient.folio || '-'}</p>
+            <p><strong>Fecha Indicación Qx:</strong> ${fechaIndQxFmt}</p>
+            <p><strong>Tiempo de Espera:</strong> <strong style="color:#ef4444;">${calculateWaitingDays(currentModalPatient.fechaIndQx)} días</strong></p>
         </div>
 
-        <hr style="margin:20px 0;">
+        <!-- 2. DATOS DEL PACIENTE -->
+        <h3 style="color:#1e40af; background:#f1f5f9; padding:12px 20px; border-radius:8px; margin-bottom:18px; border-left:6px solid #3b82f6;">
+            👤 2. Datos del Paciente
+        </h3>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px,1fr)); gap:14px 40px; margin-bottom:35px;">
+            <p><strong>Nombre y Apellido:</strong> ${currentModalPatient.nombreApellido || '-'}</p>
+            <p><strong>RUT:</strong> ${currentModalPatient.rut || '-'}</p>
+            <p><strong>Fecha de Nacimiento:</strong> ${fechaNacFmt}</p>
+            <p><strong>Edad:</strong> <strong>${currentModalPatient.edad || '-'} años</strong></p>
+            <p><strong>Comuna:</strong> ${currentModalPatient.comuna || '-'}</p>
+            <p><strong>Dirección:</strong> ${currentModalPatient.direccion || '-'}</p>
+            <p><strong>N° Contacto:</strong> ${currentModalPatient.nContacto || '-'}</p>
+            <p><strong>Email:</strong> ${currentModalPatient.emailPaciente || '-'}</p>
+        </div>
 
-        <h3 style="color:#1e40af; margin:15px 0 10px 0;">🩺 Datos Clínicos</h3>
-        <p><strong>Especialidad:</strong> ${currentModalPatient.especialidad || '-'}</p>
-        <p><strong>Médico Tratante:</strong> ${currentModalPatient.medicoTratante || '-'}</p>
-        <p><strong>Diagnóstico (CIE10):</strong> ${currentModalPatient.diagnostico || '-'}</p>
-        <p><strong>Lateralidad:</strong> ${currentModalPatient.lateralidad || 'NO APLICA'}</p>
-        <p><strong>Intervención:</strong> ${currentModalPatient.intervencion || '-'}</p>
+        <hr style="margin:35px 0; border:2px solid #e2e8f0;">
 
-        <hr style="margin:20px 0;">
+        <!-- 3. DATOS CLÍNICOS -->
+        <h3 style="color:#1e40af; background:#f1f5f9; padding:12px 20px; border-radius:8px; margin-bottom:18px; border-left:6px solid #3b82f6;">
+            🩺 3. Datos Clínicos
+        </h3>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(250px,1fr)); gap:14px 40px; margin-bottom:35px;">
+            <p><strong>Especialidad:</strong> ${currentModalPatient.especialidad || '-'}</p>
+            <p><strong>Médico Tratante:</strong> ${currentModalPatient.medicoTratante || '-'}</p>
+            <p><strong>Diagnóstico (CIE-10):</strong> ${currentModalPatient.diagnostico || '-'}</p>
+            <p><strong>Intervención:</strong> ${currentModalPatient.intervencion || '-'}</p>
+            <p><strong>Lateralidad:</strong> ${currentModalPatient.lateralidad || 'NO APLICA'}</p>
+        </div>
 
-        <h3 style="color:#1e40af; margin:15px 0 10px 0;">🔬 Evaluación Preoperatoria</h3>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+        <hr style="margin:35px 0; border:2px solid #e2e8f0;">
+
+        <!-- 4. EVALUACIÓN PREOPERATORIA -->
+        <h3 style="color:#1e40af; background:#f1f5f9; padding:12px 20px; border-radius:8px; margin-bottom:18px; border-left:6px solid #3b82f6;">
+            🔬 4. Evaluación Preoperatoria
+        </h3>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:14px 35px; margin-bottom:35px;">
             <p><strong>Estatus EPA:</strong> ${currentModalPatient.estatusEpa || '-'}</p>
+            <p><strong>Fecha EPA:</strong> ${fechaEpaFmt}</p>
             <p><strong>Anestesiólogo:</strong> ${currentModalPatient.anestesiologo || '-'}</p>
-            <p><strong>Fecha EPA:</strong> ${currentModalPatient.fechaEpa || '-'}</p>
             <p><strong>GES:</strong> ${currentModalPatient.ges || '-'}</p>
             <p><strong>TACO:</strong> ${currentModalPatient.taco || '-'}</p>
             <p><strong>ASA:</strong> ${currentModalPatient.asa || '-'}</p>
@@ -674,22 +704,28 @@ function showPatientModal(key) {
             <p><strong>Prioridad:</strong> ${currentModalPatient.prioridad || '-'}</p>
         </div>
 
-        <hr style="margin:20px 0;">
+        <hr style="margin:35px 0; border:2px solid #e2e8f0;">
 
-        <h3 style="color:#1e40af; margin:15px 0 10px 0;">📅 Programación</h3>
-        <p><strong>Fecha Estatus Program:</strong> ${currentModalPatient.fechaEstatusProgram || '-'}</p>
-        <p><strong>Espera Programación:</strong> ${calculateWaitingDays(currentModalPatient.fechaEstatusProgram)} días</p>
-        <p><strong>Fecha de Cirugía:</strong> ${currentModalPatient.fechaCirugia || 'No programada'}</p>
+        <!-- 5. PROGRAMACIÓN -->
+        <h3 style="color:#1e40af; background:#f1f5f9; padding:12px 20px; border-radius:8px; margin-bottom:18px; border-left:6px solid #3b82f6;">
+            📅 5. Programación Quirúrgica
+        </h3>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:14px 40px; margin-bottom:35px;">
+            <p><strong>Fecha Estatus Program:</strong> ${fechaEstatusProgFmt}</p>
+            <p><strong>Fecha de Cirugía:</strong> ${fechaCirugiaFmt}</p>
+            <p><strong>Espera Programación:</strong> <strong>${calculateWaitingDays(currentModalPatient.fechaEstatusProgram)} días</strong></p>
+        </div>
 
-        <hr style="margin:20px 0;">
+        <hr style="margin:35px 0; border:2px solid #e2e8f0;">
 
-        <h3 style="color:#1e40af; margin:15px 0 10px 0;">📝 Observaciones</h3>
+        <!-- 6. OBSERVACIONES -->
+        <h3 style="color:#1e40af; background:#f1f5f9; padding:12px 20px; border-radius:8px; margin-bottom:18px; border-left:6px solid #3b82f6;">
+            📝 6. Observaciones
+        </h3>
         <p><strong>Patologías Crónicas:</strong> ${currentModalPatient.patologiasCronicas || 'Ninguna'}</p>
         <p><strong>Medicamentos Crónicos:</strong> ${currentModalPatient.medicamentosCronicos || 'Ninguno'}</p>
-        <p><strong>Observaciones Generales:</strong><br>${currentModalPatient.observaciones || 'Sin observaciones'}</p>
+        <p style="margin-top:18px;"><strong>Observaciones Generales:</strong><br>${currentModalPatient.observaciones || 'Sin observaciones'}</p>
         <p><strong>Indicaciones Anestesiólogo:</strong><br>${currentModalPatient.indicacionesAnest || 'Sin indicaciones'}</p>
-
-        <hr style="margin:20px 0;">
 
         ${historialHTML}
     `;
@@ -782,7 +818,7 @@ function deleteCurrentPatient() {
 }
 
 // ====================== NAVEGACIÓN ======================
-// Llamar contador al mostrar la lista
+// ====================== NAVEGACIÓN ======================
 function showSection(section) {
     document.querySelectorAll('.section').forEach(s => s.style.display = 'none');
     document.getElementById(section + 'Section').style.display = 'block';
@@ -791,11 +827,9 @@ function showSection(section) {
     const active = Array.from(document.querySelectorAll('.sidebar li')).find(li => li.getAttribute('onclick').includes(section));
     if (active) active.classList.add('active');
 
-    // Mostrar contador total al entrar a la lista
+    // Restaurar filtros al volver a la lista de pacientes
     if (section === 'patientList') {
-        setTimeout(() => {
-            mostrarContadorResultados(patients.length);
-        }, 100);
+        setTimeout(restaurarFiltros, 120);
     }
 }
 
@@ -874,7 +908,7 @@ function cargarDesplegables() {
     // 1. Estatus Tabla
     const estatusSelect = document.getElementById('estatusTabla');
     if (estatusSelect) {
-        const opcionesEstatus = ['PROGRAMABLE','PENDIENTE EPA','NO PROGRAMABLE','ACTUALIZAR','CARTA CERTIFICADA','OPERADO','EGRESO','TRASLADO INTERNO','RECHAZO','EXCEPTUADO NO GESTIONABLE','EXCEPTUADO GESTIONABLE'];
+        const opcionesEstatus = ['PROGRAMABLE','PENDIENTE EPA','NO PROGRAMABLE','ACTUALIZAR','CARTA CERTIFICADA','OPERADO','EGRESO','TRASLADO INTERNO','RECHAZO','EXCEPTUADO TRANSITORIO','EXCEPTUADO POR RECHAZO', 'EXCEPTUADO INUBICABLE'];
         estatusSelect.innerHTML = '<option value="">Seleccionar Estatus</option>';
         opcionesEstatus.forEach(opt => {
             const option = document.createElement('option');
@@ -1086,6 +1120,13 @@ function filterPatients() {
 
     renderPatientsTable(filtered);
     mostrarContadorResultados(filtered.length);
+
+    // Guardar filtros actuales para mantenerlos al editar
+    guardarFiltrosActuales();
+    
+    renderPatientsTable(filtered);
+    mostrarContadorResultados(filtered.length);
+
 }
 
 // ====================== MOSTRAR CONTADOR DE RESULTADOS ======================
@@ -1258,7 +1299,7 @@ function printPatient() {
             <title>Ficha - ${p.nombreApellido}</title>
             <style>
                 body { font-family: Arial, sans-serif; margin: 20px; font-size: 13px; line-height: 1.35; color: #1e2937; }
-                .header { margin-bottom: 25px; border-bottom: 3px solid #1e40af; padding-bottom: 15px; }
+                .header { margin-bottom: 25px; border-bottom: 3px solid #1e40af; padding-bottom: 15px;}
                 .header-content { display: flex; align-items: center; gap: 20px; }
                 .logo { height: 80px; width: auto; }
                 .title-container { flex: 1; text-align: center; }
@@ -1848,45 +1889,140 @@ function imprimirAnalisisIA() {
 }
 
 
-
 // ====================== AUTO-RELLENO FOLIO SEGÚN GES ======================
-document.addEventListener('DOMContentLoaded', () => {
+
+// Función principal para el formulario (nuevo y edición)
+function setupAutoFolioGES() {
     const gesSelect = document.getElementById('ges');
     const folioInput = document.getElementById('folio');
 
-    if (gesSelect && folioInput) {
-        gesSelect.addEventListener('change', () => {
-            if (gesSelect.value === 'SI') {
-                folioInput.value = 'NO APLICA';
-                folioInput.readOnly = true;        // Opcional: bloquear edición
-                folioInput.style.backgroundColor = '#f3f4f6';
-            } else {
-                // Si cambian a NO o NO APLICA, se limpia para que puedan escribir
-                if (folioInput.value === 'NO APLICA') {
-                    folioInput.value = '';
-                }
-                folioInput.readOnly = false;
-                folioInput.style.backgroundColor = '';
+    if (!gesSelect || !folioInput) return;
+
+    gesSelect.addEventListener('change', () => {
+        if (gesSelect.value === 'SI') {
+            folioInput.value = 'NO APLICA';
+            folioInput.readOnly = true;
+            folioInput.style.backgroundColor = '#f3f4f6';
+        } else {
+            if (folioInput.value === 'NO APLICA') {
+                folioInput.value = '';
             }
-        });
-    }
+            folioInput.readOnly = false;
+            folioInput.style.backgroundColor = '';
+        }
+    });
+}
+
+// Aplicar al cargar el formulario
+document.addEventListener('DOMContentLoaded', () => {
+    setupAutoFolioGES();
 });
 
-// También funciona al editar paciente
-function autoRellenarFolioAlEditar() {
-    const gesSelect = document.getElementById('ges');
-    const folioInput = document.getElementById('folio');
+// ====================== ACTUALIZAR REGISTROS EXISTENTES ======================
+async function actualizarFolioEnRegistrosExistentes() {
+    if (!confirm("⚠️ ¿Quieres actualizar TODOS los registros existentes?\n\nSe cambiará el Folio a 'NO APLICA' en aquellos donde GES = 'SI'.\n\nEsta acción es segura y solo se ejecuta una vez.")) {
+        return;
+    }
 
-    if (gesSelect && folioInput && gesSelect.value === 'SI') {
-        folioInput.value = 'NO APLICA';
-        folioInput.readOnly = true;
-        folioInput.style.backgroundColor = '#f3f4f6';
+    let actualizados = 0;
+    const loading = document.getElementById('loadingModal');
+    if (loading) loading.style.display = 'flex';
+
+    try {
+        const snapshot = await db.ref('patients').once('value');
+        
+        snapshot.forEach((child) => {
+            const patient = child.val();
+            const key = child.key;
+
+            if (patient.ges === 'SI' && patient.folio !== 'NO APLICA') {
+                db.ref('patients/' + key).update({
+                    folio: 'NO APLICA'
+                });
+                actualizados++;
+            }
+        });
+
+        alert(`✅ Proceso finalizado!\n\nRegistros actualizados: ${actualizados}`);
+        
+    } catch (error) {
+        console.error(error);
+        alert("Error al actualizar registros: " + error.message);
+    } finally {
+        if (loading) loading.style.display = 'none';
     }
 }
 
-// Llamar después de cargar datos al editar
+// Llamar después de editar paciente
 const originalEditCurrentPatient = editCurrentPatient;
 editCurrentPatient = function() {
     originalEditCurrentPatient.apply(this, arguments);
-    setTimeout(autoRellenarFolioAlEditar, 300); // Pequeño delay para que carguen los campos
+    setTimeout(() => {
+        const gesSelect = document.getElementById('ges');
+        const folioInput = document.getElementById('folio');
+        if (gesSelect && folioInput && gesSelect.value === 'SI') {
+            folioInput.value = 'NO APLICA';
+            folioInput.readOnly = true;
+            folioInput.style.backgroundColor = '#f3f4f6';
+        }
+    }, 300);
 };
+
+// ====================== GUARDAR FILTROS ACTUALES ======================
+function guardarFiltrosActuales() {
+    lastFilters = {
+        busquedaGeneral: document.getElementById('busquedaGeneral')?.value || '',
+        filterEspecialidad: document.getElementById('filterEspecialidad')?.value || '',
+        filterMedico: document.getElementById('filterMedico')?.value || '',
+        filterEstatus: document.getElementById('filterEstatus')?.value || '',
+        filterFechaDesde: document.getElementById('filterFechaDesde')?.value || '',
+        filterFechaHasta: document.getElementById('filterFechaHasta')?.value || '',
+        soloSinFolio: soloSinFolio,
+        mostrarDuplicados: mostrarDuplicados
+    };
+}
+
+// ====================== RESTAURAR FILTROS ======================
+function restaurarFiltros() {
+    // Restaurar campos de texto y selects
+    document.getElementById('busquedaGeneral').value = lastFilters.busquedaGeneral || '';
+    document.getElementById('filterEspecialidad').value = lastFilters.filterEspecialidad || '';
+    document.getElementById('filterMedico').value = lastFilters.filterMedico || '';
+    document.getElementById('filterEstatus').value = lastFilters.filterEstatus || '';
+    document.getElementById('filterFechaDesde').value = lastFilters.filterFechaDesde || '';
+    document.getElementById('filterFechaHasta').value = lastFilters.filterFechaHasta || '';
+
+    // Restaurar toggles
+    soloSinFolio = lastFilters.soloSinFolio;
+    mostrarDuplicados = lastFilters.mostrarDuplicados;
+
+    // Actualizar botones visualmente
+    const btnSinFolio = document.getElementById('btnSinFolio');
+    if (btnSinFolio) {
+        if (soloSinFolio) {
+            btnSinFolio.style.background = '#eab308';
+            btnSinFolio.style.color = 'black';
+            btnSinFolio.textContent = '✅ Solo Sin Folio';
+        } else {
+            btnSinFolio.style.background = '';
+            btnSinFolio.style.color = '';
+            btnSinFolio.textContent = 'Sin Folio';
+        }
+    }
+
+    const btnDuplicados = document.getElementById('btnDuplicados');
+    if (btnDuplicados) {
+        if (mostrarDuplicados) {
+            btnDuplicados.style.background = '#eab308';
+            btnDuplicados.style.color = 'black';
+            btnDuplicados.textContent = '✅ Mostrando Duplicados';
+        } else {
+            btnDuplicados.style.background = '';
+            btnDuplicados.style.color = '';
+            btnDuplicados.textContent = 'Mostrar Duplicados (RUT)';
+        }
+    }
+
+    // Aplicar los filtros restaurados
+    filterPatients();
+}
