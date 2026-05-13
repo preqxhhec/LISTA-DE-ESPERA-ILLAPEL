@@ -1846,3 +1846,47 @@ function imprimirAnalisisIA() {
         printWindow.print();
     }, 800);
 }
+
+
+
+// ====================== AUTO-RELLENO FOLIO SEGÚN GES ======================
+document.addEventListener('DOMContentLoaded', () => {
+    const gesSelect = document.getElementById('ges');
+    const folioInput = document.getElementById('folio');
+
+    if (gesSelect && folioInput) {
+        gesSelect.addEventListener('change', () => {
+            if (gesSelect.value === 'SI') {
+                folioInput.value = 'NO APLICA';
+                folioInput.readOnly = true;        // Opcional: bloquear edición
+                folioInput.style.backgroundColor = '#f3f4f6';
+            } else {
+                // Si cambian a NO o NO APLICA, se limpia para que puedan escribir
+                if (folioInput.value === 'NO APLICA') {
+                    folioInput.value = '';
+                }
+                folioInput.readOnly = false;
+                folioInput.style.backgroundColor = '';
+            }
+        });
+    }
+});
+
+// También funciona al editar paciente
+function autoRellenarFolioAlEditar() {
+    const gesSelect = document.getElementById('ges');
+    const folioInput = document.getElementById('folio');
+
+    if (gesSelect && folioInput && gesSelect.value === 'SI') {
+        folioInput.value = 'NO APLICA';
+        folioInput.readOnly = true;
+        folioInput.style.backgroundColor = '#f3f4f6';
+    }
+}
+
+// Llamar después de cargar datos al editar
+const originalEditCurrentPatient = editCurrentPatient;
+editCurrentPatient = function() {
+    originalEditCurrentPatient.apply(this, arguments);
+    setTimeout(autoRellenarFolioAlEditar, 300); // Pequeño delay para que carguen los campos
+};
