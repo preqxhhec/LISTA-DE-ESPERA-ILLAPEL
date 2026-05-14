@@ -45,10 +45,21 @@ function calculateAge(birthDate) {
 
 function calculateWaitingDays(startDate) {
     if (!startDate) return 0;
+
     const today = new Date();
-    today.setHours(0,0,0,0);
-    const start = new Date(startDate);
-    return Math.ceil(Math.abs(today - start) / (1000 * 60 * 60 * 24));
+    today.setHours(0, 0, 0, 0);
+
+    // Corregir fecha de inicio también
+    let start;
+    if (startDate.includes('-')) {
+        const [y, m, d] = startDate.split('-').map(Number);
+        start = new Date(y, m - 1, d);
+    } else {
+        start = new Date(startDate);
+    }
+    start.setHours(0, 0, 0, 0);
+
+    return Math.ceil((today - start) / (1000 * 60 * 60 * 24));
 }
 
 function filterMedicos() {
@@ -444,16 +455,32 @@ function renderPatientsTable(data) {
 }
 
 // ====================== FUNCIÓN PARA FORMATEAR FECHA DD/MM/AAAA ======================
+// ====================== FORMATEO DE FECHA CORREGIDO (ZONA HORARIA) ======================
 function formatDate(dateString) {
     if (!dateString) return '-';
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return dateString; // Si es inválida, devuelve original
 
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
+    // Si ya viene en formato DD/MM/YYYY, devolver tal cual
+    if (dateString.includes('/')) return dateString;
 
-    return `${day}/${month}/${year}`;
+    // Crear fecha sin problema de timezone
+    let date;
+
+    if (dateString.includes('T')) {
+        // Si viene con hora (de Firebase)
+        date = new Date(dateString);
+    } else {
+        // Formato YYYY-MM-DD → forzar medianoche local
+        const [year, month, day] = dateString.split('-').map(Number);
+        date = new Date(year, month - 1, day);   // ← Clave: constructor local
+    }
+
+    if (isNaN(date.getTime())) return dateString;
+
+    const dayStr = String(date.getDate()).padStart(2, '0');
+    const monthStr = String(date.getMonth() + 1).padStart(2, '0');
+    const yearStr = date.getFullYear();
+
+    return `${dayStr}/${monthStr}/${yearStr}`;
 }
 
 
