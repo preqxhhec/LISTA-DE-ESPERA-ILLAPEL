@@ -113,20 +113,43 @@ document.getElementById('loginForm').addEventListener('submit', (e) => {
     auth.signInWithEmailAndPassword(email, password).catch(err => alert("Error: " + err.message));
 });
 
-// Register Form
-document.getElementById('registerForm').addEventListener('submit', (e) => {
+// ====================== REGISTER FORM - VERSIÓN FINAL ======================
+document.getElementById('registerForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+
     const email = document.getElementById('regEmail').value.trim();
     const password = document.getElementById('regPassword').value;
-    if (!email || password.length < 6) return alert("Correo obligatorio y contraseña de 6+ caracteres");
+
+    if (!email) return alert("❌ Ingresa un correo electrónico");
+    if (password.length < 6) return alert("❌ La contraseña debe tener mínimo 6 caracteres");
 
     const clave = prompt("🔑 Ingresa clave de administrador:");
-    if (clave !== "Adm123") return alert("❌ Clave incorrecta");
 
-    auth.createUserWithEmailAndPassword(email, password)
-        .then(() => { alert("✅ Cuenta creada"); showLogin(); })
-        .catch(err => alert("Error: " + err.message));
+    if (clave !== "Adm123") {
+        return alert("❌ Clave de administrador incorrecta");
+    }
+
+    try {
+        const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+        const user = userCredential.user;
+
+        await db.ref('users/' + user.uid).set({
+            email: user.email,
+            role: "user",
+            createdAt: firebase.database.ServerValue.TIMESTAMP,
+            lastLogin: firebase.database.ServerValue.TIMESTAMP
+        });
+
+        alert(`✅ Cuenta creada exitosamente:\n${email}`);
+        document.getElementById('registerForm').reset();
+       
+
+    } catch (error) {
+        console.error(error);
+        alert("Error al crear cuenta: " + error.message);
+    }
 });
+
 
 function logout() {
     if (confirm("¿Cerrar sesión?")) {
@@ -136,25 +159,44 @@ function logout() {
 
 
 
-// ====================== RECUPERAR CONTRASEÑA ======================
+// ====================== RECUPERAR CONTRASEÑA - CON ESTADO DE CARGA ======================
 function forgotPassword() {
-    const email = document.getElementById('email').value.trim();
-    
+    const emailInput = document.getElementById('email');
+    const email = emailInput ? emailInput.value.trim() : '';
+    const link = event.currentTarget || event.target;  // El enlace clickeado
+
     if (!email) {
-        alert("Por favor ingresa tu correo electrónico para recuperar la contraseña.");
+        alert("❌ Por favor ingresa tu correo electrónico en el campo.");
+        if (emailInput) emailInput.focus();
         return;
     }
 
+    const originalText = link.textContent;
+
+    // Cambiar texto a "Enviando..."
+    link.textContent = "Enviando...";
+    link.style.pointerEvents = "none";   // Desactivar clicks mientras envía
+    link.style.opacity = "0.7";
+
     auth.sendPasswordResetEmail(email)
         .then(() => {
-            alert("✅ Se ha enviado un enlace de recuperación a tu correo electrónico.\n\nRevisa tu bandeja de entrada (y spam).");
+            alert(`✅ Se ha enviado un enlace de recuperación a:\n\n${email}\n\nRevisa tu bandeja de entrada y SPAM.`);
         })
         .catch((error) => {
+            console.error(error);
             if (error.code === 'auth/user-not-found') {
-                alert("No existe una cuenta con ese correo.");
+                alert("No existe una cuenta con ese correo electrónico.");
+            } else if (error.code === 'auth/invalid-email') {
+                alert("El correo electrónico no es válido.");
             } else {
                 alert("Error: " + error.message);
             }
+        })
+        .finally(() => {
+            // Restaurar el texto original
+            link.textContent = originalText;
+            link.style.pointerEvents = "auto";
+            link.style.opacity = "1";
         });
 }
 
@@ -336,46 +378,48 @@ let lastFilters = {
 
 
 // ====================== TABLA CON ORDENAMIENTO POR DEFECTO (T. Espera ASCENDENTE) ======================
-// ====================== TABLA CON ORDENAMIENTO Y FECHA FORMATEADA ======================
 function renderPatientsTable(data) {
     const tbody = document.getElementById('tableBody');
     tbody.innerHTML = '';
 
-    // Ordenamiento por defecto: T. Espera ASCENDENTE
-    if (!currentSortColumn) {
+    // Si estamos mostrando duplicados, NO aplicar el ordenamiento por T. Espera
+    if (!mostrarDuplicados && !currentSortColumn) {
         currentSortColumn = 'tEspera';
         currentSortOrder = 'asc';
     }
 
-    data.sort((a, b) => {
-        let valA, valB;
+    // Ordenamiento normal (solo si NO estamos en modo duplicados)
+    if (!mostrarDuplicados) {
+        data.sort((a, b) => {
+            let valA, valB;
 
-        switch(currentSortColumn) {
-            case 'tEspera':
-                valA = calculateWaitingDays(a.fechaIndQx);
-                valB = calculateWaitingDays(b.fechaIndQx);
-                break;
-            case 'esperaProgram':
-                valA = calculateWaitingDays(a.fechaEstatusProgram);
-                valB = calculateWaitingDays(b.fechaEstatusProgram);
-                break;
-            case 'edad':
-                valA = Number(a.edad) || 0;
-                valB = Number(b.edad) || 0;
-                break;
-            case 'fechaIndQx':
-                valA = new Date(a.fechaIndQx || 0);
-                valB = new Date(b.fechaIndQx || 0);
-                break;
-            default:
-                valA = (a[currentSortColumn] || '').toString().toLowerCase();
-                valB = (b[currentSortColumn] || '').toString().toLowerCase();
-        }
+            switch(currentSortColumn) {
+                case 'tEspera':
+                    valA = calculateWaitingDays(a.fechaIndQx);
+                    valB = calculateWaitingDays(b.fechaIndQx);
+                    break;
+                case 'esperaProgram':
+                    valA = calculateWaitingDays(a.fechaEstatusProgram);
+                    valB = calculateWaitingDays(b.fechaEstatusProgram);
+                    break;
+                case 'edad':
+                    valA = Number(a.edad) || 0;
+                    valB = Number(b.edad) || 0;
+                    break;
+                case 'fechaIndQx':
+                    valA = new Date(a.fechaIndQx || 0);
+                    valB = new Date(b.fechaIndQx || 0);
+                    break;
+                default:
+                    valA = (a[currentSortColumn] || '').toString().toLowerCase();
+                    valB = (b[currentSortColumn] || '').toString().toLowerCase();
+            }
 
-        if (valA < valB) return currentSortOrder === 'asc' ? -1 : 1;
-        if (valA > valB) return currentSortOrder === 'asc' ? 1 : -1;
-        return 0;
-    });
+            if (valA < valB) return currentSortOrder === 'asc' ? -1 : 1;
+            if (valA > valB) return currentSortOrder === 'asc' ? 1 : -1;
+            return 0;
+        });
+    }
 
     data.forEach((patient) => {
         const fechaFormateada = patient.fechaIndQx ? formatDate(patient.fechaIndQx) : '-';
@@ -818,7 +862,6 @@ function deleteCurrentPatient() {
 }
 
 // ====================== NAVEGACIÓN ======================
-// ====================== NAVEGACIÓN ======================
 function showSection(section) {
     document.querySelectorAll('.section').forEach(s => s.style.display = 'none');
     document.getElementById(section + 'Section').style.display = 'block';
@@ -827,9 +870,12 @@ function showSection(section) {
     const active = Array.from(document.querySelectorAll('.sidebar li')).find(li => li.getAttribute('onclick').includes(section));
     if (active) active.classList.add('active');
 
-    // Restaurar filtros al volver a la lista de pacientes
+    // === LÓGICA SEGÚN SECCIÓN ===
     if (section === 'patientList') {
-        setTimeout(restaurarFiltros, 120);
+        setTimeout(restaurarFiltros, 100);
+    }
+    else if (section === 'users') {
+        setTimeout(loadUsers, 150);     // ← Importante: Cargar usuarios automáticamente
     }
 }
 
@@ -838,10 +884,24 @@ function resetForm() {
     currentPatientKey = null;
 }
 
-// ====================== AUTENTICACIÓN SIMPLIFICADA ======================
-auth.onAuthStateChanged(user => {
+// ====================== AUTENTICACIÓN ======================
+// ====================== AUTENTICACIÓN CON BLOQUEO DE USUARIOS DESACTIVADOS ======================
+auth.onAuthStateChanged(async (user) => {
     if (user) {
+        // Verificar si el usuario está desactivado
+        const userDataSnap = await db.ref('users/' + user.uid).once('value');
+        const userData = userDataSnap.val();
+
+        if (userData && userData.role === "disabled") {
+            alert("❌ Tu cuenta ha sido desactivada por un administrador.");
+            auth.signOut();
+            return;
+        }
+
         currentUser = user;
+        currentUserRole = userData?.role || 'user';
+        checkAdminAccess();
+
         document.getElementById('loginSection').style.display = 'none';
         document.getElementById('registerSection').style.display = 'none';
         document.getElementById('mainApp').style.display = 'flex';
@@ -852,8 +912,10 @@ auth.onAuthStateChanged(user => {
         showSection('dashboard');
     } else {
         currentUser = null;
+        currentUserRole = null;
         document.getElementById('mainApp').style.display = 'none';
         document.getElementById('loginSection').style.display = 'flex';
+        document.getElementById('registerSection').style.display = 'none';
         document.getElementById('userInfo').style.display = 'none';
     }
 });
@@ -878,30 +940,6 @@ document.getElementById('loginForm').addEventListener('submit', (e) => {
         });
 });
 
-// Register
-document.getElementById('registerForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const email = document.getElementById('regEmail').value.trim();
-    const password = document.getElementById('regPassword').value;
-
-    if (!email || password.length < 6) return alert("Datos inválidos");
-
-    const clave = prompt("🔑 Clave de administrador:");
-    if (clave !== "Adm123") return alert("Clave incorrecta");
-
-    auth.createUserWithEmailAndPassword(email, password)
-        .then(() => {
-            alert("✅ Cuenta creada");
-            showLogin();
-        })
-        .catch(err => alert("Error: " + err.message));
-});
-
-function logout() {
-    if (confirm("¿Cerrar sesión?")) {
-        auth.signOut().then(() => location.reload());
-    }
-}
 
 // ====================== CARGAR TODOS LOS DESPLEGABLES ======================
 function cargarDesplegables() {
@@ -1068,6 +1106,7 @@ let soloSinFolio = false;
 let mostrarDuplicados = false;
 
 // ====================== FILTRADO PRINCIPAL ======================
+// ====================== FILTRADO PRINCIPAL ======================
 function filterPatients() {
     const busqueda = (document.getElementById('busquedaGeneral')?.value || '').toLowerCase().trim();
     const especialidad = document.getElementById('filterEspecialidad').value;
@@ -1109,24 +1148,23 @@ function filterPatients() {
         return pasa;
     });
 
+    // ==================== FILTRO DE DUPLICADOS ====================
     if (mostrarDuplicados) {
         const rutCount = {};
         filtered.forEach(p => {
             if (p.rut) rutCount[p.rut] = (rutCount[p.rut] || 0) + 1;
         });
+
         filtered = filtered.filter(p => p.rut && rutCount[p.rut] > 1);
+
+        // Ordenamiento fuerte por RUT (agrupados)
         filtered.sort((a, b) => (a.rut || '').localeCompare(b.rut || ''));
     }
 
     renderPatientsTable(filtered);
     mostrarContadorResultados(filtered.length);
 
-    // Guardar filtros actuales para mantenerlos al editar
     guardarFiltrosActuales();
-    
-    renderPatientsTable(filtered);
-    mostrarContadorResultados(filtered.length);
-
 }
 
 // ====================== MOSTRAR CONTADOR DE RESULTADOS ======================
@@ -1195,11 +1233,12 @@ function toggleSinFolio() {
 function toggleDuplicados() {
     mostrarDuplicados = !mostrarDuplicados;
     const btn = document.getElementById('btnDuplicados');
+    
     if (btn) {
         if (mostrarDuplicados) {
             btn.style.background = '#eab308';
             btn.style.color = 'black';
-            btn.textContent = '✅ Mostrando Duplicados';
+            btn.textContent = '✅ Mostrando Duplicados (agrupados)';
         } else {
             btn.style.background = '';
             btn.style.color = '';
@@ -2025,4 +2064,215 @@ function restaurarFiltros() {
 
     // Aplicar los filtros restaurados
     filterPatients();
+}
+
+
+
+
+// ====================== GESTIÓN DE USUARIOS CON ROLES ======================
+let currentUserRole = null;
+
+function checkAdminAccess() {
+    const usersMenu = document.getElementById('usersMenuItem');
+    if (usersMenu) {
+        usersMenu.style.display = (currentUserRole === 'admin') ? 'block' : 'none';
+    }
+}
+
+// Cargar usuarios (solo si es admin)
+// ====================== CARGAR USUARIOS ======================
+// ====================== CARGAR USUARIOS ======================
+// ====================== CARGAR USUARIOS (BOTONES BIEN ALINEADOS) ======================
+function loadUsers() {
+    if (currentUserRole !== 'admin') {
+        alert("❌ No tienes permisos.");
+        showSection('dashboard');
+        return;
+    }
+
+    const tbody = document.getElementById('usersTableBody');
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px;">Cargando usuarios...</td></tr>';
+
+    db.ref('users').once('value', (snapshot) => {
+        tbody.innerHTML = '';
+
+        if (!snapshot.exists()) {
+            tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:60px;">No hay usuarios registrados.</td></tr>`;
+            return;
+        }
+
+        snapshot.forEach((child) => {
+            const user = child.val();
+            const key = child.key;
+            const isDisabled = user.role === 'disabled';
+
+            const tr = document.createElement('tr');
+            tr.style.backgroundColor = isDisabled ? '#fee2e2' : '';
+
+            tr.innerHTML = `
+                <td><strong>${user.email}</strong></td>
+                <td>
+                    <span style="padding:5px 12px; border-radius:20px; background:${isDisabled ? '#ef4444' : (user.role === 'admin' ? '#3b82f6' : '#10b981')}; color:white;">
+                        ${isDisabled ? '🚫 Desactivado' : (user.role === 'admin' ? '🛡️ Admin' : '👤 Usuario')}
+                    </span>
+                </td>
+                <td>${user.createdAt ? new Date(user.createdAt).toLocaleDateString('es-CL') : '-'}</td>
+                <td>${user.lastLogin ? new Date(user.lastLogin).toLocaleDateString('es-CL') : '-'}</td>
+                <td style="white-space:nowrap;">
+                    ${user.role !== 'admin' ? `
+                        <button onclick="${isDisabled ? `reactivateUser('${key}', '${user.email}')` : `deactivateUser('${key}', '${user.email}')`}" 
+                                style="background:${isDisabled ? '#10b981' : '#f59e0b'}; color:white; border:none; padding:6px 12px; border-radius:5px; margin-right:5px; cursor:pointer;">
+                            ${isDisabled ? '🔄 Reactivar' : 'Desactivar'}
+                        </button>
+                        <button onclick="permanentlyDeleteUser('${key}', '${user.email}')" 
+                                style="background:#b91c1c; color:white; border:none; padding:6px 12px; border-radius:5px; cursor:pointer;">
+                            Eliminar
+                        </button>
+                    ` : `<span style="color:#94a3b8;">Protegido</span>`}
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    });
+}
+
+// ====================== DESACTIVAR USUARIO ======================
+async function deactivateUser(userKey, email) {
+    if (!confirm(`¿Desactivar al usuario?\n\n${email}`)) return;
+
+    const clave = prompt("🔑 Ingresa clave de administrador:");
+    if (clave !== "Adm123") return alert("❌ Clave incorrecta.");
+
+    try {
+        await db.ref('users/' + userKey).update({ role: "disabled" });
+        alert(`✅ Usuario ${email} desactivado.`);
+        loadUsers();
+    } catch (error) {
+        alert("Error: " + error.message);
+    }
+}
+
+// ====================== ELIMINAR USUARIO PERMANENTEMENTE ======================
+async function permanentlyDeleteUser(userKey, email) {
+    if (!confirm(`⚠️ ¿ELIMINAR COMPLETAMENTE al usuario?\n\n${email}\n\nEsta acción es IRREVERSIBLE.`)) return;
+
+    const clave = prompt("🔑 Ingresa clave de administrador:");
+    if (clave !== "Adm123") return alert("❌ Clave incorrecta.");
+
+    if (!confirm("¿Estás 100% seguro? Se borrará el registro para siempre.")) return;
+
+    try {
+        await db.ref('users/' + userKey).remove();
+        alert(`✅ Usuario ${email} eliminado permanentemente.`);
+        loadUsers();
+    } catch (error) {
+        alert("Error al eliminar: " + error.message);
+    }
+}
+
+// ====================== REACTIVAR USUARIO ======================
+async function reactivateUser(userKey, email) {
+    if (!confirm(`¿Reactivar al usuario?\n\n${email}`)) return;
+
+    const clave = prompt("🔑 Ingresa clave de administrador:");
+    if (clave !== "Adm123") return alert("❌ Clave incorrecta.");
+
+    try {
+        await db.ref('users/' + userKey).update({ role: "user" });
+        alert(`✅ Usuario ${email} reactivado.`);
+        loadUsers();
+    } catch (error) {
+        alert("Error: " + error.message);
+    }
+}
+
+
+
+
+// ====================== CONVERTIR TU CUENTA EN ADMINISTRADOR ======================
+// Ejecuta esto UNA SOLA VEZ (puedes ponerlo temporalmente en console o en un botón)
+
+function convertirEnAdmin() {
+    if (!currentUser) {
+        alert("Debes iniciar sesión primero");
+        return;
+    }
+
+    db.ref('users/' + currentUser.uid).set({
+        email: currentUser.email,
+        role: "admin",
+        createdAt: firebase.database.ServerValue.TIMESTAMP,
+        lastLogin: firebase.database.ServerValue.TIMESTAMP
+    }).then(() => {
+        alert("✅ ¡Tu cuenta ahora es ADMINISTRADOR!");
+        currentUserRole = 'admin';
+        checkAdminAccess();
+    });
+}
+
+
+
+
+
+
+
+
+
+
+
+function verificarUsuarios() {
+    db.ref('users').once('value', (snapshot) => {
+        console.log("Usuarios encontrados:", snapshot.val());
+        if (snapshot.exists()) {
+            alert("Sí hay usuarios. Cantidad: " + snapshot.numChildren());
+        } else {
+            alert("No hay usuarios guardados en la base de datos.");
+        }
+    });
+}
+
+
+
+
+
+// ====================== DESACTIVAR USUARIO ======================
+async function deleteUser(userKey, email) {
+    if (!confirm(`¿Desactivar al usuario?\n\n${email}`)) return;
+
+    const clave = prompt("🔑 Ingresa clave de administrador:");
+    if (clave !== "Adm123") return alert("❌ Clave incorrecta.");
+
+    try {
+        await db.ref('users/' + userKey).update({
+            role: "disabled",
+            deactivatedAt: firebase.database.ServerValue.TIMESTAMP,
+            deactivatedBy: currentUser ? currentUser.email : 'Admin'
+        });
+
+        alert(`✅ Usuario ${email} desactivado correctamente.`);
+        loadUsers();
+    } catch (error) {
+        alert("Error: " + error.message);
+    }
+}
+
+// ====================== REACTIVAR USUARIO ======================
+async function reactivateUser(userKey, email) {
+    if (!confirm(`¿Reactivar al usuario?\n\n${email}`)) return;
+
+    const clave = prompt("🔑 Ingresa clave de administrador:");
+    if (clave !== "Adm123") return alert("❌ Clave incorrecta.");
+
+    try {
+        await db.ref('users/' + userKey).update({
+            role: "user",
+            reactivatedAt: firebase.database.ServerValue.TIMESTAMP,
+            reactivatedBy: currentUser ? currentUser.email : 'Admin'
+        });
+
+        alert(`✅ Usuario ${email} reactivado correctamente.`);
+        loadUsers();
+    } catch (error) {
+        alert("Error: " + error.message);
+    }
 }
