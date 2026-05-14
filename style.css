@@ -374,10 +374,38 @@ body {
 
 
 
-/* ESTYLE PARA MODIFICAR CONTRASEÑA*/
+/* ==================== MEJORAS LOGIN ==================== */
+
+.login-box {
+    padding: 40px 35px;
+}
+
+.btn-primary.login-btn {
+    width: 100%;
+    padding: 14px 20px;
+    font-size: 1.05rem;
+    font-weight: 500;
+    margin-top: 10px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-primary.login-btn:hover {
+    background: #2563eb;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(37, 99, 235, 0.3);
+}
+
+/* Evitar subrayado extraño en el texto del botón */
+.btn-primary.login-btn {
+    text-decoration: none;
+}
+
 .forgot-password {
     text-align: center;
-    margin: 15px 0 10px 0;
+    margin: 20px 0 15px 0;
 }
 
 .forgot-password a {
@@ -388,8 +416,8 @@ body {
 
 .forgot-password a:hover {
     text-decoration: underline;
+    color: #1e40af;
 }
-
 
 
 
@@ -563,4 +591,23 @@ body {
     .scrollable-table {
         max-height: calc(100vh - 420px);
     }
+}
+
+
+/* seccion de usuarios*/
+
+.users-table th {
+    background: #1e40af;
+    color: white;
+    padding: 14px 10px;
+    font-weight: 500;
+}
+
+.users-table td {
+    padding: 14px 10px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.users-table tr:hover {
+    background: #f8fafc;
 }
