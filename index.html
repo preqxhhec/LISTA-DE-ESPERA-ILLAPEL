@@ -35,7 +35,7 @@
         </div>
     </header>
 
-    <!-- LOGIN / REGISTER (sin cambios) -->
+         <!-- LOGIN SECTION -->
     <div id="loginSection" class="login-container">
         <div class="login-box">
             <img src="logo.png" alt="Logo" class="login-logo">
@@ -49,15 +49,20 @@
                     <label for="password">Contraseña</label>
                     <input type="password" id="password" required>
                 </div>
-                <button type="submit" class="btn-primary">Ingresar</button>
+                
+                <!-- Botón mejorado -->
+                <button type="submit" class="btn-primary login-btn">Ingresar</button>
             </form>
+            
             <p class="forgot-password">
                 <a href="#" onclick="forgotPassword()">¿Olvidaste tu contraseña?</a>
             </p>
+            
             <p class="register-link">¿No tienes cuenta? <a href="#" onclick="showRegister()">Registrarse</a></p>
         </div>
     </div>
 
+    <!-- REGISTER SECTION -->
     <div id="registerSection" class="login-container" style="display: none;">
         <div class="login-box">
             <img src="logo.png" alt="Logo" class="login-logo">
@@ -80,12 +85,13 @@
     <!-- MAIN APP -->
     <div id="mainApp" class="main-app" style="display: none;">
         <nav class="sidebar">
-            <ul>
-                <li onclick="showSection('dashboard')" class="active"><i class="fas fa-home"></i> Dashboard</li>
-                <li onclick="showSection('newPatient')"><i class="fas fa-user-plus"></i> Nuevo Paciente</li>
-                <li onclick="showSection('patientList')"><i class="fas fa-list"></i> Lista de Pacientes</li>
-            </ul>
-        </nav>
+    <ul>
+        <li onclick="showSection('dashboard')" class="active"><i class="fas fa-home"></i> Dashboard</li>
+        <li onclick="showSection('newPatient')"><i class="fas fa-user-plus"></i> Nuevo Paciente</li>
+        <li onclick="showSection('patientList')"><i class="fas fa-list"></i> Lista de Pacientes</li>
+        <li onclick="showSection('users')" id="usersMenuItem" style="display:none;"><i class="fas fa-users-cog"></i> Gestión de Usuarios</li>
+    </ul>
+</nav>
 
         <main class="content">
             
@@ -362,6 +368,34 @@
                     </table>
                 </div>
             </section>
+
+
+
+                       <!-- GESTIÓN DE USUARIOS (Solo Admin) -->
+            <section id="usersSection" class="section" style="display: none;">
+                <h2>👥 Gestión de Usuarios</h2>
+                <p style="color:#64748b; margin-bottom:20px;">Solo visible para Administradores • Total: <strong id="totalUsers">0</strong></p>
+                
+                <div class="table-container">
+                    <table id="usersTable" class="users-table">
+                        <thead>
+                            <tr>
+                                <th>Email</th>
+                                <th>Rol</th>
+                                <th>Fecha de Creación</th>
+                                <th>Último Login</th>
+                                <th style="width:120px;">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+
+
+
+
 
         </main>
     </div>
