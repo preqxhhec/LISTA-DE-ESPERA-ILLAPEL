@@ -1058,6 +1058,7 @@ function cargarDesplegables() {
             <option value="NO APLICA">NO APLICA</option>
             <option value="DERECHA">DERECHA</option>
             <option value="IZQUIERDA">IZQUIERDA</option>
+            <option value="BILATERAL">BILATERAL</option>
         `;
     }
 
