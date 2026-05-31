@@ -2370,10 +2370,7 @@ function loadUsers() {
                                 style="background:${isDisabled ? '#10b981' : '#f59e0b'}; color:white; border:none; padding:6px 12px; border-radius:5px; margin-right:5px; cursor:pointer;">
                             ${isDisabled ? '🔄 Reactivar' : 'Desactivar'}
                         </button>
-                        <button onclick="permanentlyDeleteUser('${key}', '${user.email}')" 
-                                style="background:#b91c1c; color:white; border:none; padding:6px 12px; border-radius:5px; cursor:pointer;">
-                            Eliminar
-                        </button>
+                      
                     ` : `<span style="color:#94a3b8;">Protegido</span>`}
                 </td>
             `;
@@ -2398,23 +2395,7 @@ async function deactivateUser(userKey, email) {
     }
 }
 
-// ====================== ELIMINAR USUARIO PERMANENTEMENTE ======================
-async function permanentlyDeleteUser(userKey, email) {
-    if (!confirm(`⚠️ ¿ELIMINAR COMPLETAMENTE al usuario?\n\n${email}\n\nEsta acción es IRREVERSIBLE.`)) return;
 
-    const clave = prompt("🔑 Ingresa clave de administrador:");
-    if (clave !== "Adm123") return alert("❌ Clave incorrecta.");
-
-    if (!confirm("¿Estás 100% seguro? Se borrará el registro para siempre.")) return;
-
-    try {
-        await db.ref('users/' + userKey).remove();
-        alert(`✅ Usuario ${email} eliminado permanentemente.`);
-        loadUsers();
-    } catch (error) {
-        alert("Error al eliminar: " + error.message);
-    }
-}
 
 // ====================== REACTIVAR USUARIO ======================
 async function reactivateUser(userKey, email) {
@@ -2435,26 +2416,7 @@ async function reactivateUser(userKey, email) {
 
 
 
-// ====================== CONVERTIR TU CUENTA EN ADMINISTRADOR ======================
-// Ejecuta esto UNA SOLA VEZ (puedes ponerlo temporalmente en console o en un botón)
 
-function convertirEnAdmin() {
-    if (!currentUser) {
-        alert("Debes iniciar sesión primero");
-        return;
-    }
-
-    db.ref('users/' + currentUser.uid).set({
-        email: currentUser.email,
-        role: "admin",
-        createdAt: firebase.database.ServerValue.TIMESTAMP,
-        lastLogin: firebase.database.ServerValue.TIMESTAMP
-    }).then(() => {
-        alert("✅ ¡Tu cuenta ahora es ADMINISTRADOR!");
-        currentUserRole = 'admin';
-        checkAdminAccess();
-    });
-}
 
 
 
@@ -2482,20 +2444,16 @@ function verificarUsuarios() {
 
 
 // ====================== DESACTIVAR USUARIO ======================
-async function deleteUser(userKey, email) {
+async function deactivateUser(userKey, email) {
     if (!confirm(`¿Desactivar al usuario?\n\n${email}`)) return;
 
-    const clave = prompt("🔑 Ingresa clave de administrador:");
-    if (clave !== "Adm123") return alert("❌ Clave incorrecta.");
-
     try {
-        await db.ref('users/' + userKey).update({
+        await db.ref('users/' + userKey).update({ 
             role: "disabled",
             deactivatedAt: firebase.database.ServerValue.TIMESTAMP,
             deactivatedBy: currentUser ? currentUser.email : 'Admin'
         });
-
-        alert(`✅ Usuario ${email} desactivado correctamente.`);
+        alert(`✅ Usuario ${email} desactivado.`);
         loadUsers();
     } catch (error) {
         alert("Error: " + error.message);
@@ -2505,9 +2463,6 @@ async function deleteUser(userKey, email) {
 // ====================== REACTIVAR USUARIO ======================
 async function reactivateUser(userKey, email) {
     if (!confirm(`¿Reactivar al usuario?\n\n${email}`)) return;
-
-    const clave = prompt("🔑 Ingresa clave de administrador:");
-    if (clave !== "Adm123") return alert("❌ Clave incorrecta.");
 
     try {
         await db.ref('users/' + userKey).update({
