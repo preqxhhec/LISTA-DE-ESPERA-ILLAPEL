@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, viewport-fit=cover">
     <title>Unidad Prequirúrgico - Hospital de Illapel</title>
     
     <link rel="icon" href="favicon.png" type="image/x-icon">
@@ -22,23 +22,40 @@
 <body>
     <!-- HEADER -->
     <header class="header">
+    <div class="header-left">
+        <button class="mobile-menu-btn" id="menuBtn" onclick="toggleMobileMenu()">
+            <i class="fas fa-bars"></i>
+        </button>
         <div class="logo-container">
-            <img src="logo.png" alt="Logo Hospital Illapel" class="logo">
+            <img src="logo.png" alt="Logo Hospital Illapel" class="logo" onerror="this.style.display='none'">
             <div>
                 <h1>Unidad Prequirúrgico</h1>
                 <p>Hospital de Illapel</p>
             </div>
         </div>
-        <div class="user-info" id="userInfo" style="display: none;">
-            <span id="userEmail"></span>
-            <button onclick="logout()" class="btn-logout">Cerrar Sesión</button>
-        </div>
-    </header>
+    </div>
+    <div class="user-info" id="userInfo" style="display: none;">
+        <span id="userEmail"></span>
+        <button onclick="logout()" class="btn-logout">Cerrar Sesión</button>
+    </div>
+</header>
 
-         <!-- LOGIN SECTION -->
+    <!-- SIDEBAR -->
+    <div class="sidebar" id="sidebar">
+        <button class="sidebar-close" onclick="closeSidebar()">&times;</button>
+        <ul>
+            <li onclick="showSection('dashboard'); closeSidebar()" class="active"><i class="fas fa-home"></i> Dashboard</li>
+            <li onclick="showSection('newPatient'); closeSidebar()"><i class="fas fa-user-plus"></i> Nuevo Paciente</li>
+            <li onclick="showSection('patientList'); closeSidebar()"><i class="fas fa-list"></i> Lista de Pacientes</li>
+            <li onclick="showSection('users'); closeSidebar()" id="usersMenuItem" style="display:none;"><i class="fas fa-users-cog"></i> Gestión de Usuarios</li>
+        </ul>
+    </div>
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+    <!-- LOGIN SECTION -->
     <div id="loginSection" class="login-container">
         <div class="login-box">
-            <img src="logo.png" alt="Logo" class="login-logo">
+            <img src="logo.png" alt="Logo" class="login-logo" onerror="this.style.display='none'">
             <h2>Iniciar Sesión</h2>
             <form id="loginForm">
                 <div class="form-group">
@@ -49,15 +66,11 @@
                     <label for="password">Contraseña</label>
                     <input type="password" id="password" required>
                 </div>
-                
-                <!-- Botón mejorado -->
                 <button type="submit" class="btn-primary login-btn">Ingresar</button>
             </form>
-            
             <p class="forgot-password">
                 <a href="#" onclick="forgotPassword()">¿Olvidaste tu contraseña?</a>
             </p>
-            
             <p class="register-link">¿No tienes cuenta? <a href="#" onclick="showRegister()">Registrarse</a></p>
         </div>
     </div>
@@ -65,7 +78,7 @@
     <!-- REGISTER SECTION -->
     <div id="registerSection" class="login-container" style="display: none;">
         <div class="login-box">
-            <img src="logo.png" alt="Logo" class="login-logo">
+            <img src="logo.png" alt="Logo" class="login-logo" onerror="this.style.display='none'">
             <h2>Crear Cuenta</h2>
             <form id="registerForm">
                 <div class="form-group">
@@ -84,65 +97,153 @@
 
     <!-- MAIN APP -->
     <div id="mainApp" class="main-app" style="display: none;">
-        <nav class="sidebar">
-    <ul>
-        <li onclick="showSection('dashboard')" class="active"><i class="fas fa-home"></i> Dashboard</li>
-        <li onclick="showSection('newPatient')"><i class="fas fa-user-plus"></i> Nuevo Paciente</li>
-        <li onclick="showSection('patientList')"><i class="fas fa-list"></i> Lista de Pacientes</li>
-        <li onclick="showSection('users')" id="usersMenuItem" style="display:none;"><i class="fas fa-users-cog"></i> Gestión de Usuarios</li>
-    </ul>
-</nav>
-
         <main class="content">
-            
+
+
             <!-- DASHBOARD -->
-            <section id="dashboardSection" class="section">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-                    <h2>Dashboard General</h2>
-                    <button onclick="printDashboard()" class="btn-print-dashboard">
-                        🖨️ Imprimir Dashboard Completo
-                    </button>
-                </div>
-                
-                <div class="stats-grid">
-                    <div class="stat-card total-card">
-                        <h3>Total Pacientes</h3>
-                        <p id="totalPatients" class="big-number">0</p>
-                    </div>
-                </div>
+<section id="dashboardSection" class="section">
+    <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; margin-bottom:20px;">
+        <h2>Dashboard General</h2>
+        <button onclick="printDashboard()" class="btn-print-dashboard">
+            🖨️ Imprimir Dashboard Completo
+        </button>
+    </div>
+    
+    <!-- Filtro rápido por especialidad -->
+    <div class="dashboard-filters" style="background: white; padding: 15px 20px; border-radius: 12px; margin-bottom: 20px; display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+        <label style="font-weight: 600; color: #1e40af;">🔍 Filtrar por Especialidad:</label>
+        <select id="dashboardFilterEspecialidad" onchange="actualizarDashboardConFiltro()" style="padding: 8px 15px; border-radius: 8px; border: 1px solid #cbd5e1; min-width: 200px;">
+            <option value="">Todas las Especialidades</option>
+        </select>
+        <button onclick="limpiarFiltroDashboard()" class="btn-secondary" style="padding: 8px 16px;">Limpiar Filtro</button>
+    </div>
+    
+    <!-- Estadísticas principales -->
+    <div class="stats-grid">
+        <div class="stat-card total-card">
+            <h3>Total Pacientes Gestionables</h3>
+            <p id="totalPatients" class="big-number">0</p>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #059669, #10b981); color: white;">
+            <h3>📊 Mediana de Espera General</h3>
+            <p id="medianaEsperaGeneral" style="font-size: 1.8rem; font-weight: 700;">0 días</p>
+            <small style="font-size: 0.8rem;">Desde Fecha Indicación Qx</small>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #7c3aed, #8b5cf6); color: white;">
+            <h3>📊 Mediana Espera Programación</h3>
+            <p id="medianaEsperaProgramacion" style="font-size: 1.8rem; font-weight: 700;">0 días</p>
+            <small style="font-size: 0.8rem;">Desde Fecha Estatus Programable</small>
+        </div>
+    </div>
 
-                <div class="charts-row">
-                    <div class="chart-card">
-                        <h3>Pacientes por Especialidad</h3>
-                        <canvas id="especialidadChart"></canvas>
-                    </div>
-                    <div class="chart-card">
-                        <h3>Pacientes por Estatus Tabla</h3>
-                        <canvas id="estatusChart"></canvas>
-                    </div>
+    <!-- Prioridades y GES -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <h3>🔄 Pacientes por Prioridad</h3>
+            <div style="display: flex; justify-content: space-around; margin-top: 15px;">
+                <div style="text-align: center;">
+                    <span style="display: inline-block; width: 30px; height: 30px; background: #ef4444; border-radius: 50%;"></span>
+                    <div><strong>P1</strong></div>
+                    <div><span id="prioridadP1" style="font-size: 1.5rem; font-weight: 700;">0</span></div>
                 </div>
+                <div style="text-align: center;">
+                    <span style="display: inline-block; width: 30px; height: 30px; background: #f59e0b; border-radius: 50%;"></span>
+                    <div><strong>P2</strong></div>
+                    <div><span id="prioridadP2" style="font-size: 1.5rem; font-weight: 700;">0</span></div>
+                </div>
+                <div style="text-align: center;">
+                    <span style="display: inline-block; width: 30px; height: 30px; background: #10b981; border-radius: 50%;"></span>
+                    <div><strong>P3</strong></div>
+                    <div><span id="prioridadP3" style="font-size: 1.5rem; font-weight: 700;">0</span></div>
+                </div>
+            </div>
+        </div>
+        <div class="stat-card">
+            <h3>✅ GES vs NO GES</h3>
+            <div style="display: flex; justify-content: space-around; margin-top: 15px;">
+                <div style="text-align: center;">
+                    <span style="display: inline-block; width: 30px; height: 30px; background: #3b82f6; border-radius: 50%;"></span>
+                    <div><strong>GES SI</strong></div>
+                    <div><span id="gesSi" style="font-size: 1.5rem; font-weight: 700;">0</span></div>
+                </div>
+                <div style="text-align: center;">
+                    <span style="display: inline-block; width: 30px; height: 30px; background: #94a3b8; border-radius: 50%;"></span>
+                    <div><strong>GES NO</strong></div>
+                    <div><span id="gesNo" style="font-size: 1.5rem; font-weight: 700;">0</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
 
-                <h3 style="margin: 30px 0 15px 0;">📊 Pacientes por Especialidad vs Estatus</h3>
-                <div class="table-container">
-                    <table id="crossTable" class="cross-table">
-                        <thead id="crossTableHead"></thead>
-                        <tbody id="crossTableBody"></tbody>
-                    </table>
-                </div>
+    <!-- Gráficos principales -->
+    <div class="charts-row">
+        <div class="chart-card">
+            <h3>Pacientes por Especialidad</h3>
+            <canvas id="especialidadChart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>Pacientes por Estatus Tabla</h3>
+            <canvas id="estatusChart"></canvas>
+        </div>
+    </div>
 
-                <!-- BOTÓN DE IA DEBAJO DE LA TABLA -->
-                <div style="margin-top: 25px; text-align: center;">
-                    <button onclick="analizarConIA()" class="btn-primary" style="background: #8b5cf6; border: none; padding: 12px 28px; font-size: 1.1rem;">
-                        🤖 Analizar Datos con IA
-                    </button>
-                </div>
-            </section>
+    <!-- Gráfico de tendencia mensual -->
+    <div class="chart-card" style="margin-bottom: 25px;">
+        <h3>📈 Ingresos por Mes (Fecha Indicación Qx)</h3>
+        <canvas id="tendenciaChart" style="max-height: 300px;"></canvas>
+    </div>
+
+    <!-- Medianas por especialidad -->
+    <h3 style="margin: 30px 0 15px 0;">📊 Medianas de Espera por Especialidad</h3>
+    <div class="table-container">
+        <table id="medianasTable" class="cross-table">
+            <thead>
+                <tr><th>Especialidad</th><th>Mediana Espera (días)</th><th>Mediana Espera Programación (días)</th><th>Total Pacientes</th></thead>
+            <tbody id="medianasTableBody"></tbody>
+        </table>
+    </div>
+
+    <!-- Tabla cruzada Especialidad vs Estatus -->
+    <h3 style="margin: 30px 0 15px 0;">📊 Pacientes por Especialidad vs Estatus</h3>
+    <div class="table-container">
+        <table id="crossTable" class="cross-table">
+            <thead id="crossTableHead"></thead>
+            <tbody id="crossTableBody"></tbody>
+        </table>
+    </div>
+
+    <!-- Top pacientes con mayor espera -->
+    <h3 style="margin: 30px 0 15px 0;">⚠️ Pacientes con Mayor Tiempo de Espera</h3>
+    <div class="table-container">
+        <table id="topEsperaTable" class="cross-table">
+            <thead>
+                <tr><th>Paciente</th><th>RUT</th><th>Especialidad</th><th>Días de Espera</th><th>Prioridad</th><th>Acción</th</thead>
+            <tbody id="topEsperaBody"></tbody>
+        </table>
+    </div>
+
+    <!-- Últimos pacientes registrados -->
+    <h3 style="margin: 30px 0 15px 0;">🆕 Últimos 5 Pacientes Registrados</h3>
+    <div class="table-container">
+        <table id="ultimosPacientesTable" class="cross-table">
+            <thead>
+                <tr><th>Fecha Registro</th><th>Paciente</th><th>RUT</th><th>Especialidad</th><th>Estatus</th><th>Intervención</th></thead>
+            <tbody id="ultimosPacientesBody"></tbody>
+        </table>
+    </div>
+
+    <!-- Botón IA -->
+    <div style="margin-top: 25px; text-align: center;">
+        <button onclick="analizarConIA()" class="btn-primary" style="background: #8b5cf6; border: none; padding: 12px 28px;">
+            🤖 Analizar Datos con IA
+        </button>
+    </div>
+</section>
 
             <!-- NUEVO PACIENTE -->
             <section id="newPatientSection" class="section" style="display: none;">
                 <h2>Ingreso de Nuevo Paciente</h2>
                 <form id="patientForm" class="patient-form">
-
                     <h3 class="form-section-title">📋 1. Datos Administrativos</h3>
                     <div class="form-row">
                         <div class="form-group">
@@ -296,8 +397,10 @@
                         <textarea id="indicacionesAnest" rows="3"></textarea>
                     </div>
 
-                    <button type="submit" class="btn-primary btn-large">💾 Guardar Paciente</button>
-                </form>
+                  <div style="display: flex; gap: 15px; justify-content: center;">
+    <button type="submit" class="btn-primary" style="padding: 10px 24px;">💾 Guardar Paciente</button>
+    <button type="button" id="btnCancelarEdicion" class="btn-secondary" style="padding: 10px 24px; background: #64748b; display: none;" onclick="cancelarEdicion()">❌ Cancelar</button>
+</div>     </form>
             </section>
 
             <!-- LISTA DE PACIENTES -->
@@ -305,7 +408,7 @@
                 <h2>Lista de Pacientes</h2>
                 
                 <div class="filters sticky-filters">
-                    <div class="filter-group" style="flex: 1; min-width: 280px;">
+                    <div class="filter-group" style="flex: 2; min-width: 200px;">
                         <label>🔍 Búsqueda General</label>
                         <input type="text" id="busquedaGeneral" placeholder="Buscar por nombre, RUT, diagnóstico, intervención..." 
                                onkeyup="filterPatients()" style="width: 100%;">
@@ -340,10 +443,6 @@
                     
                     <button onclick="downloadCSV()" class="btn-secondary" style="background:#10b981; color:white;">📥 Descargar CSV</button>
                     <button onclick="downloadExcel()" class="btn-secondary" style="background:#2563eb; color:white;">📊 Descargar Excel</button>
-                   <!--  <button onclick="formatearTodosLosRUT()" class="btn-secondary" style="background:#f59e0b; color:white; font-weight:600;">🔄 Formatear Todos los RUTs</button>
-                     <button onclick="actualizarFolioEnRegistrosExistentes()" class="btn-secondary" style="background:#f59e0b; color:white;">
-    🔄 Actualizar Folios Existentes (GES=SI)
-</button>-->
                 </div>
 
                 <div id="resultadosContador"></div>
@@ -369,9 +468,7 @@
                 </div>
             </section>
 
-
-
-                       <!-- GESTIÓN DE USUARIOS (Solo Admin) -->
+            <!-- GESTIÓN DE USUARIOS (Solo Admin) -->
             <section id="usersSection" class="section" style="display: none;">
                 <h2>👥 Gestión de Usuarios</h2>
                 <p style="color:#64748b; margin-bottom:20px;">Solo visible para Administradores • Total: <strong id="totalUsers">0</strong></p>
@@ -390,13 +487,70 @@
                         <tbody id="usersTableBody"></tbody>
                     </table>
                 </div>
+<!-- Panel de Administración de Listas para Filtros (Solo Admin) -->
+<div id="adminFiltersPanel" style="margin-top: 40px; border-top: 3px solid #e2e8f0; padding-top: 25px;">
+    <h3 style="color: #1e40af; margin-bottom: 20px;">⚙️ Administrar Opciones de Filtros</h3>
+    
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 25px;">
+        
+        <!-- 1. Gestión de Especialidades y Médicos -->
+        <div style="background: #f8fafc; padding: 20px; border-radius: 12px;">
+            <h4 style="color: #1e40af; margin-bottom: 15px;">🏥 Especialidades y Médicos</h4>
+            
+            <div class="form-group">
+                <label>Especialidad</label>
+                <select id="adminEspSelect" onchange="adminCargarMedicos()" style="width: 100%; padding: 10px;">
+                    <option value="">Seleccionar Especialidad</option>
+                </select>
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin: 15px 0;">
+                <input type="text" id="adminNuevaEspecialidad" placeholder="Nueva Especialidad" style="flex: 1; padding: 8px;">
+                <button onclick="adminAgregarEspecialidad()" class="btn-primary" style="padding: 8px 16px;">➕ Agregar</button>
+            </div>
+            
+            <hr style="margin: 15px 0;">
+            
+            <div class="form-group">
+                <label>Médicos de la especialidad seleccionada</label>
+                <select id="adminMedicosList" size="5" style="width: 100%; padding: 8px; min-height: 150px;"></select>
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin: 10px 0;">
+                <input type="text" id="adminNuevoMedico" placeholder="Nombre del Médico" style="flex: 1; padding: 8px;">
+                <button onclick="adminAgregarMedico()" class="btn-primary" style="padding: 8px 16px;">➕ Agregar</button>
+            </div>
+            <button onclick="adminEliminarMedico()" class="btn-danger" style="width: 100%; padding: 8px;">🗑️ Eliminar Médico Seleccionado</button>
+        </div>
+        
+        <!-- 2. Gestión de Estatus Tabla -->
+        <div style="background: #f8fafc; padding: 20px; border-radius: 12px;">
+            <h4 style="color: #1e40af; margin-bottom: 15px;">📋 Estatus Tabla</h4>
+            
+            <div class="form-group">
+                <label>Lista de Estatus</label>
+                <select id="adminEstatusList" size="8" style="width: 100%; padding: 8px; min-height: 200px;"></select>
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin: 15px 0;">
+                <input type="text" id="adminNuevoEstatus" placeholder="Nuevo Estatus" style="flex: 1; padding: 8px;">
+                <button onclick="adminAgregarEstatus()" class="btn-primary" style="padding: 8px 16px;">➕ Agregar</button>
+            </div>
+            <button onclick="adminEliminarEstatus()" class="btn-danger" style="width: 100%; padding: 8px;">🗑️ Eliminar Estatus Seleccionado</button>
+        </div>
+        
+    </div>
+    
+    <div style="margin-top: 20px; text-align: center;">
+        <button onclick="adminRestablecerDefault()" class="btn-secondary" style="background: #f59e0b; padding: 10px 24px;">
+            🔄 Restablecer valores por defecto
+        </button>
+    </div>
+</div>
+
+
+
             </section>
-
-
-
-
-
-
         </main>
     </div>
 
@@ -420,6 +574,18 @@
             <p>Por favor espera, esto puede tomar unos segundos.</p>
             <div style="margin:20px 0;">
                 <i class="fas fa-spinner fa-spin" style="font-size:48px; color:#3b82f6;"></i>
+            </div>
+        </div>
+    </div>
+
+    <div id="modalAnalisisIA" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 900px;">
+            <span class="close" onclick="cerrarModalAnalisis()">&times;</span>
+            <h2>🤖 Análisis Inteligente</h2>
+            <div id="contenidoAnalisis" class="modal-body"></div>
+            <div class="modal-buttons">
+                <button onclick="imprimirAnalisisIA()" class="btn-primary">🖨️ Imprimir Análisis</button>
+                <button onclick="cerrarModalAnalisis()" class="btn-secondary">Cerrar</button>
             </div>
         </div>
     </div>
