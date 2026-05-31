@@ -121,7 +121,7 @@ function validarRut(rut) {
 //SEGMENTO 2 (Login / Register / Logout)
 
 // ====================== LOGIN / REGISTER ======================
-function showLogin() {
+/*function showLogin() {
     document.getElementById('loginSection').style.display = 'flex';
     document.getElementById('registerSection').style.display = 'none';
 }
@@ -129,7 +129,7 @@ function showLogin() {
 function showRegister() {
     document.getElementById('loginSection').style.display = 'none';
     document.getElementById('registerSection').style.display = 'flex';
-}
+}*/
 
 // Login Form
 document.getElementById('loginForm').addEventListener('submit', (e) => {
@@ -138,43 +138,6 @@ document.getElementById('loginForm').addEventListener('submit', (e) => {
     const password = document.getElementById('password').value;
     if (!email || !password) return alert("Ingresa correo y contraseña");
     auth.signInWithEmailAndPassword(email, password).catch(err => alert("Error: " + err.message));
-});
-
-// ====================== REGISTER FORM - VERSIÓN FINAL ======================
-document.getElementById('registerForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    const email = document.getElementById('regEmail').value.trim();
-    const password = document.getElementById('regPassword').value;
-
-    if (!email) return alert("❌ Ingresa un correo electrónico");
-    if (password.length < 6) return alert("❌ La contraseña debe tener mínimo 6 caracteres");
-
-    const clave = prompt("🔑 Ingresa clave de administrador:");
-
-    if (clave !== "Adm123") {
-        return alert("❌ Clave de administrador incorrecta");
-    }
-
-    try {
-        const userCredential = await auth.createUserWithEmailAndPassword(email, password);
-        const user = userCredential.user;
-
-        await db.ref('users/' + user.uid).set({
-            email: user.email,
-            role: "user",
-            createdAt: firebase.database.ServerValue.TIMESTAMP,
-            lastLogin: firebase.database.ServerValue.TIMESTAMP
-        });
-
-        alert(`✅ Cuenta creada exitosamente:\n${email}`);
-        document.getElementById('registerForm').reset();
-       
-
-    } catch (error) {
-        console.error(error);
-        alert("Error al crear cuenta: " + error.message);
-    }
 });
 
 
@@ -1004,7 +967,7 @@ auth.onAuthStateChanged(async (user) => {
         checkAdminAccess();
 
         document.getElementById('loginSection').style.display = 'none';
-        document.getElementById('registerSection').style.display = 'none';
+     
         document.getElementById('mainApp').style.display = 'flex';
         document.getElementById('userInfo').style.display = 'flex';
         document.getElementById('userEmail').textContent = user.email;
@@ -1021,7 +984,7 @@ auth.onAuthStateChanged(async (user) => {
         currentUserRole = null;
         document.getElementById('mainApp').style.display = 'none';
         document.getElementById('loginSection').style.display = 'flex';
-        document.getElementById('registerSection').style.display = 'none';
+     
         document.getElementById('userInfo').style.display = 'none';
 
         // ✅ OCULTAR BOTÓN HAMBURGUESA AL CERRAR SESIÓN
@@ -3026,4 +2989,95 @@ function cargarEspecialidadesEnFiltroDashboard() {
         opt.textContent = esp;
         select.appendChild(opt);
     });
+}
+
+// ====================== CREAR USUARIO POR ADMIN ======================
+async function crearUsuarioPorAdmin() {
+    // Verificar permisos
+    if (currentUserRole !== 'admin') {
+        alert("❌ No tienes permisos para realizar esta acción.");
+        return;
+    }
+    
+    const email = document.getElementById('newUserEmail').value.trim();
+    const password = document.getElementById('newUserPassword').value;
+    const role = document.getElementById('newUserRole').value;
+    
+    // Validaciones
+    if (!email) {
+        alert("❌ Ingresa un correo electrónico");
+        return;
+    }
+    
+    if (!password || password.length < 6) {
+        alert("❌ La contraseña debe tener mínimo 6 caracteres");
+        return;
+    }
+    
+    if (!confirm(`¿Crear usuario con los siguientes datos?\n\n📧 Email: ${email}\n🔒 Rol: ${role === 'admin' ? 'Administrador' : 'Usuario'}`)) {
+        return;
+    }
+    
+    // Mostrar loading
+    const loading = document.getElementById('loadingModal');
+    if (loading) loading.style.display = 'flex';
+    
+    try {
+        // 1. Crear usuario en Firebase Authentication
+        const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+        const user = userCredential.user;
+        
+        // 2. Guardar datos adicionales en Realtime Database
+        await db.ref('users/' + user.uid).set({
+            email: user.email,
+            role: role,
+            createdAt: firebase.database.ServerValue.TIMESTAMP,
+            lastLogin: null,
+            createdBy: currentUser.email,
+            createdByUid: currentUser.uid
+        });
+        
+        // 3. Limpiar formulario
+        document.getElementById('newUserEmail').value = '';
+        document.getElementById('newUserPassword').value = '';
+        document.getElementById('newUserRole').value = 'user';
+        
+        // 4. Recargar lista de usuarios
+        await loadUsers();
+        
+        alert(`✅ Usuario creado exitosamente:\n\n📧 ${email}\n🔒 Rol: ${role === 'admin' ? 'Administrador' : 'Usuario'}`);
+        
+    } catch (error) {
+        console.error("Error al crear usuario:", error);
+        
+        if (error.code === 'auth/email-already-in-use') {
+            alert("❌ Este correo electrónico ya está registrado.");
+        } else if (error.code === 'auth/invalid-email') {
+            alert("❌ El correo electrónico no es válido.");
+        } else if (error.code === 'auth/weak-password') {
+            alert("❌ La contraseña es muy débil. Usa al menos 6 caracteres.");
+        } else {
+            alert("❌ Error al crear usuario: " + error.message);
+        }
+    } finally {
+        if (loading) loading.style.display = 'none';
+    }
+}
+
+// ====================== ENVIAR CORREO DE RESTABLECIMIENTO ======================
+async function enviarCorreoRestablecimiento(email) {
+    if (currentUserRole !== 'admin') {
+        alert("❌ No tienes permisos.");
+        return;
+    }
+    
+    if (!confirm(`¿Enviar correo de restablecimiento de contraseña a:\n\n${email}?`)) return;
+    
+    try {
+        await auth.sendPasswordResetEmail(email);
+        alert(`✅ Correo de restablecimiento enviado a:\n${email}\n\nEl usuario podrá establecer su nueva contraseña.`);
+    } catch (error) {
+        console.error(error);
+        alert("❌ Error al enviar correo: " + error.message);
+    }
 }
