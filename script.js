@@ -1,3 +1,19 @@
+// ====================== FUNCIONES DE MENÚ RESPONSIVE ======================
+function toggleMobileMenu() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    if (sidebar) sidebar.classList.add('open');
+    if (overlay) overlay.style.display = 'block';
+}
+
+function closeSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    if (sidebar) sidebar.classList.remove('open');
+    if (overlay) overlay.style.display = 'none';
+}
+
+
 //SEGMENTO 1 (Configuración + Utilidades)
 
 /// ====================== FIREBASE CONFIG ======================
@@ -164,6 +180,8 @@ document.getElementById('registerForm').addEventListener('submit', async (e) => 
 
 function logout() {
     if (confirm("¿Cerrar sesión?")) {
+        // ✅ OCULTAR BOTÓN ANTES DE CERRAR SESIÓN
+        document.getElementById('menuBtn').style.display = 'none';
         auth.signOut().then(() => location.reload());
     }
 }
@@ -364,14 +382,24 @@ function loadPatients() {
 
         renderPatientsTable(patients);
         updateDashboard();
+        cargarEspecialidadesEnFiltroDashboard();  // ← AGREGAR ESTA LÍNEA
         
-        setTimeout(makeTableSortable, 300);   // ← Importante
+        setTimeout(makeTableSortable, 300);
     });
 }
+
+
 
 // ====================== VARIABLES GLOBALES DE ORDENAMIENTO ======================
 let currentSortColumn = null;
 let currentSortOrder = 'asc';
+
+// Para el gráfico de tendencia
+let tendenciaChartInstance = null;
+
+// Variable para filtro del dashboard
+let dashboardFiltroEspecialidad = '';
+
 // Variables para mantener filtros al editar
 let lastFilters = {
     busquedaGeneral: '',
@@ -383,6 +411,17 @@ let lastFilters = {
     soloSinFolio: false,
     mostrarDuplicados: false
 };
+
+// ====================== LISTAS DINÁMICAS PARA FILTROS (AGREGAR ESTO) ======================
+let especialidadesLista = [];      // Nombres de especialidades
+let medicosPorEspecialidad = {};   // Médicos por especialidad
+let estatusTablaLista = [];        // Opciones de estatus
+let estatusEpaLista = [];          // Opciones de estatus EPA
+let anestesiologosLista = [];      // Lista de anestesiólogos
+let comunasLista = [];             // Lista de comunas
+
+// Ruta en Firebase para guardar configuraciones
+const CONFIG_DB_PATH = 'configuracion/filtrosDinamicos';
 
 // ====================== TABLA CON ORDENAMIENTO POR CLIC ======================
 // ====================== TABLA CON ORDENAMIENTO CORREGIDO ======================
@@ -518,50 +557,78 @@ function makeTableSortable() {
 let especialidadChartInstance = null;
 let estatusChartInstance = null;
 
-// ====================== ACTUALIZAR DASHBOARD - TOTAL GESTIONABLES ======================
-// ====================== ACTUALIZAR DASHBOARD - TOTAL GESTIONABLES ======================
-function updateDashboard() {
-    const totalGeneral = patients.length;
-    
-    // Lista de estatus NO gestionables (más robusta)
-    const noGestionables = [
-        "EGRESO", "RECHAZO", "TRASLADO INTERNO", "OPERADO",
-        "egreso", "rechazo", "traslado interno", "operado"
-    ];
 
-    const totalGestionables = patients.filter(p => {
-        if (!p.estatusTabla) return true; // Si no tiene estatus, se considera gestionable
+// ====================== ACTUALIZAR DASHBOARD - TOTAL GESTIONABLES ======================
+// ====================== ACTUALIZAR DASHBOARD COMPLETO ======================
+function updateDashboard() {
+    // Aplicar filtro de especialidad si existe
+    let pacientesFiltrados = patients;
+    if (dashboardFiltroEspecialidad) {
+        pacientesFiltrados = patients.filter(p => p.especialidad === dashboardFiltroEspecialidad);
+    }
+    
+    // 1. Total de pacientes gestionables
+    const noGestionables = ["EGRESO", "RECHAZO", "TRASLADO INTERNO", "OPERADO", "egreso", "rechazo", "traslado interno", "operado"];
+    const totalGestionables = pacientesFiltrados.filter(p => {
+        if (!p.estatusTabla) return true;
         const estatus = p.estatusTabla.toString().trim().toUpperCase();
         return !noGestionables.includes(estatus);
     }).length;
-
-    // Actualizar número y título
     document.getElementById('totalPatients').textContent = totalGestionables;
-
-    const totalCard = document.querySelector('.total-card h3');
-    if (totalCard) {
-        totalCard.textContent = "Total Pacientes Gestionables";
-    }
-
-    // Resto del dashboard (gráficos y tabla cruzada)
+    
+    // 2. Medianas de espera
+    const tiemposEspera = pacientesFiltrados.map(p => calculateWaitingDays(p.fechaIndQx)).filter(t => t > 0);
+    const medianaGeneral = calcularMediana(tiemposEspera);
+    document.getElementById('medianaEsperaGeneral').innerHTML = `${medianaGeneral} <span style="font-size: 0.9rem;">días</span>`;
+    
+    const tiemposEsperaProgram = pacientesFiltrados.map(p => calculateWaitingDays(p.fechaEstatusProgram)).filter(t => t > 0);
+    const medianaProgramacion = calcularMediana(tiemposEsperaProgram);
+    document.getElementById('medianaEsperaProgramacion').innerHTML = `${medianaProgramacion} <span style="font-size: 0.9rem;">días</span>`;
+    
+    // 3. Prioridades
+    const p1 = pacientesFiltrados.filter(p => p.prioridad === 'P1').length;
+    const p2 = pacientesFiltrados.filter(p => p.prioridad === 'P2').length;
+    const p3 = pacientesFiltrados.filter(p => p.prioridad === 'P3').length;
+    document.getElementById('prioridadP1').textContent = p1;
+    document.getElementById('prioridadP2').textContent = p2;
+    document.getElementById('prioridadP3').textContent = p3;
+    
+    // 4. GES
+    const gesSi = pacientesFiltrados.filter(p => p.ges === 'SI').length;
+    const gesNo = pacientesFiltrados.filter(p => p.ges === 'NO').length;
+    document.getElementById('gesSi').textContent = gesSi;
+    document.getElementById('gesNo').textContent = gesNo;
+    
+    // 5. Datos para gráficos
     const porEspecialidad = {};
     const porEstatus = {};
     const crossData = {};
-
-    patients.forEach(p => {
+    
+    pacientesFiltrados.forEach(p => {
         const esp = p.especialidad || 'Sin Especialidad';
         const est = p.estatusTabla || 'Sin Estatus';
-
         porEspecialidad[esp] = (porEspecialidad[esp] || 0) + 1;
         porEstatus[est] = (porEstatus[est] || 0) + 1;
-
         if (!crossData[esp]) crossData[esp] = {};
         crossData[esp][est] = (crossData[esp][est] || 0) + 1;
     });
-
+    
+    // 6. Gráficos
     renderEspecialidadChart(porEspecialidad);
     renderEstatusChart(porEstatus);
     renderCrossTable(crossData, porEspecialidad, porEstatus);
+    
+    // 7. Tabla de medianas por especialidad
+    renderMedianasPorEspecialidad(pacientesFiltrados);
+    
+    // 8. Top pacientes con mayor espera
+    renderTopEspera(pacientesFiltrados);
+    
+    // 9. Últimos pacientes registrados
+    renderUltimosPacientes(pacientesFiltrados);
+    
+    // 10. Gráfico de tendencia mensual
+    renderTendenciaMensual(pacientesFiltrados);
 }
 
 // ====================== GRÁFICO POR ESPECIALIDAD ======================
@@ -817,6 +884,9 @@ function editCurrentPatient() {
     closeModal();
     showSection('newPatient');
 
+    // ✅ MOSTRAR EL BOTÓN CANCELAR
+    document.getElementById('btnCancelarEdicion').style.display = 'block';
+
     // Llenar TODOS los campos del formulario
     const campos = {
         patientId: currentModalPatient.id,
@@ -890,6 +960,7 @@ function deleteCurrentPatient() {
 
 // ====================== NAVEGACIÓN ======================
 function showSection(section) {
+    closeSidebar();
     document.querySelectorAll('.section').forEach(s => s.style.display = 'none');
     document.getElementById(section + 'Section').style.display = 'block';
 
@@ -909,6 +980,9 @@ function showSection(section) {
 function resetForm() {
     document.getElementById('patientForm').reset();
     currentPatientKey = null;
+
+     // ✅ OCULTAR EL BOTÓN CANCELAR AL RESETEAR
+    document.getElementById('btnCancelarEdicion').style.display = 'none';
 }
 
 // ====================== AUTENTICACIÓN ======================
@@ -935,6 +1009,11 @@ auth.onAuthStateChanged(async (user) => {
         document.getElementById('userInfo').style.display = 'flex';
         document.getElementById('userEmail').textContent = user.email;
 
+        // ✅ MOSTRAR BOTÓN HAMBURGUESA DESPUÉS DEL LOGIN
+        document.getElementById('menuBtn').style.display = 'block';
+
+        
+        await cargarConfiguracionFiltros();
         loadPatients();
         showSection('dashboard');
     } else {
@@ -944,6 +1023,9 @@ auth.onAuthStateChanged(async (user) => {
         document.getElementById('loginSection').style.display = 'flex';
         document.getElementById('registerSection').style.display = 'none';
         document.getElementById('userInfo').style.display = 'none';
+
+        // ✅ OCULTAR BOTÓN HAMBURGUESA AL CERRAR SESIÓN
+        document.getElementById('menuBtn').style.display = 'none';
     }
 });
 
@@ -970,88 +1052,93 @@ document.getElementById('loginForm').addEventListener('submit', (e) => {
 
 // ====================== CARGAR TODOS LOS DESPLEGABLES ======================
 function cargarDesplegables() {
-    // 1. Estatus Tabla
+    // 1. Estatus Tabla (ahora usa la variable global estatusTablaLista)
     const estatusSelect = document.getElementById('estatusTabla');
     if (estatusSelect) {
-        const opcionesEstatus = ['PROGRAMABLE','PENDIENTE EPA','NO PROGRAMABLE','ACTUALIZAR','CARTA CERTIFICADA','OPERADO','EGRESO','TRASLADO INTERNO','RECHAZO','EXCEPTUADO TRANSITORIO','EXCEPTUADO POR RECHAZO', 'EXCEPTUADO INUBICABLE'];
+        const valorActual = estatusSelect.value;
         estatusSelect.innerHTML = '<option value="">Seleccionar Estatus</option>';
-        opcionesEstatus.forEach(opt => {
+        estatusTablaLista.forEach(opt => {
             const option = document.createElement('option');
             option.value = opt;
             option.textContent = opt;
             estatusSelect.appendChild(option);
         });
+        if (valorActual && estatusTablaLista.includes(valorActual)) estatusSelect.value = valorActual;
     }
 
-    // 2. Estatus EPA
+    // 2. Estatus EPA (usa lista dinámica)
     const estatusEpaSelect = document.getElementById('estatusEpa');
     if (estatusEpaSelect) {
-        estatusEpaSelect.innerHTML = `
-            <option value="">Seleccionar</option>
-            <option value="PENDIENTE">PENDIENTE</option>
-            <option value="AGENDADO">AGENDADO</option>
-            <option value="REALIZADO">REALIZADO</option>
-            <option value="NO APLICA">NO APLICA</option>
-        `;
+        const valorActual = estatusEpaSelect.value;
+        estatusEpaSelect.innerHTML = '<option value="">Seleccionar</option>';
+        estatusEpaLista.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt;
+            option.textContent = opt;
+            estatusEpaSelect.appendChild(option);
+        });
+        if (valorActual && estatusEpaLista.includes(valorActual)) estatusEpaSelect.value = valorActual;
     }
 
-    // 3. Anestesiólogo
+    // 3. Anestesiólogo (usa lista dinámica)
     const anestesiologoSelect = document.getElementById('anestesiologo');
     if (anestesiologoSelect) {
-        anestesiologoSelect.innerHTML = `
-            <option value="">Seleccionar Anestesiólogo</option>
-            <option value="DR. DANILO NAVA">DR. DANILO NAVA</option>
-            <option value="DR. PEDRO GOLES">DR. PEDRO GOLES</option>
-            <option value="DRA. MARIANGEL YANES">DRA. MARIANGEL YANES</option>
-            <option value="DRA. RAQUEL VALERO">DRA. RAQUEL VALERO</option>
-            <option value="DRA. MARINELA RICCOBONO">DRA. MARINELA RICCOBONO</option>
-            <option value="DR. ROBERTO OROZCO">DR. ROBERTO OROZCO</option>
-            <option value="DR. DANIEL RIQUELME">DR. DANIEL RIQUELME</option>
-            <option value="DR. ANGEL MONTIEL">DR. ANGEL MONTIEL</option>
-        `;
+        const valorActual = anestesiologoSelect.value;
+        anestesiologoSelect.innerHTML = '<option value="">Seleccionar Anestesiólogo</option>';
+        anestesiologosLista.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt;
+            option.textContent = opt;
+            anestesiologoSelect.appendChild(option);
+        });
+        if (valorActual && anestesiologosLista.includes(valorActual)) anestesiologoSelect.value = valorActual;
     }
 
-    // 4. GES, TACO, ASA, EKG, RX, ECO (SI / NO / NO APLICA)
+    // 4. GES, TACO, ASA, EKG, RX, ECO (estos NO cambian - son SI/NO/NO APLICA)
     const camposSiNo = ['ges', 'taco', 'asa', 'ekg', 'rx', 'eco'];
     camposSiNo.forEach(campo => {
         const select = document.getElementById(campo);
         if (select) {
+            const valorActual = select.value;
             select.innerHTML = `
                 <option value="">Seleccionar</option>
                 <option value="SI">SI</option>
                 <option value="NO">NO</option>
                 <option value="NO APLICA">NO APLICA</option>
             `;
+            if (valorActual) select.value = valorActual;
         }
     });
 
-    // 5. Comuna
+    // 5. Comuna (usa lista dinámica)
     const comunaSelect = document.getElementById('comuna');
     if (comunaSelect) {
-        const comunas = ['ILLAPEL', 'CANELA', 'LOS VILOS', 'SALAMANCA'];
+        const valorActual = comunaSelect.value;
         comunaSelect.innerHTML = '<option value="">Seleccionar Comuna</option>';
-        comunas.forEach(c => {
+        comunasLista.forEach(c => {
             const opt = document.createElement('option');
             opt.value = c;
             opt.textContent = c;
             comunaSelect.appendChild(opt);
         });
+        if (valorActual && comunasLista.includes(valorActual)) comunaSelect.value = valorActual;
     }
 
-    // 6. Especialidad
+    // 6. Especialidad (usa lista dinámica)
     const especialidadSelect = document.getElementById('especialidad');
     if (especialidadSelect) {
-        const especialidades = Object.keys(especialistas);
+        const valorActual = especialidadSelect.value;
         especialidadSelect.innerHTML = '<option value="">Seleccionar Especialidad</option>';
-        especialidades.forEach(esp => {
+        especialidadesLista.forEach(esp => {
             const opt = document.createElement('option');
             opt.value = esp;
             opt.textContent = esp;
             especialidadSelect.appendChild(opt);
         });
+        if (valorActual && especialidadesLista.includes(valorActual)) especialidadSelect.value = valorActual;
     }
 
-    // 7. Lateralidad y Prioridad
+    // 7. Lateralidad (NO cambia - valores fijos)
     const lateralidadSelect = document.getElementById('lateralidad');
     if (lateralidadSelect) {
         lateralidadSelect.innerHTML = `
@@ -1062,6 +1149,7 @@ function cargarDesplegables() {
         `;
     }
 
+    // 8. Prioridad (NO cambia - valores fijos)
     const prioridadSelect = document.getElementById('prioridad');
     if (prioridadSelect) {
         prioridadSelect.innerHTML = `
@@ -1087,20 +1175,25 @@ function cargarFiltrosLista() {
     const filterEsp = document.getElementById('filterEspecialidad');
     if (filterEsp) {
         filterEsp.innerHTML = '<option value="">Todas las Especialidades</option>';
-        Object.keys(especialistas).forEach(esp => {
+        especialidadesLista.forEach(esp => {
             const opt = document.createElement('option');
             opt.value = esp;
             opt.textContent = esp;
             filterEsp.appendChild(opt);
         });
     }
-
+    
+    // Médicos (vacío inicialmente, se llena al seleccionar especialidad)
+    const filterMedico = document.getElementById('filterMedico');
+    if (filterMedico) {
+        filterMedico.innerHTML = '<option value="">Todos los Médicos</option>';
+    }
+    
     // Estatus Tabla
     const filterEstatus = document.getElementById('filterEstatus');
     if (filterEstatus) {
-        const opciones = ['PROGRAMABLE','PENDIENTE EPA','NO PROGRAMABLE','ACTUALIZAR','CARTA CERTIFICADA','OPERADO','EGRESO','TRASLADO INTERNO','RECHAZO','EXCEPTUADO NO GESTIONABLE','EXCEPTUADO GESTIONABLE'];
         filterEstatus.innerHTML = '<option value="">Todos los Estatus</option>';
-        opciones.forEach(opt => {
+        estatusTablaLista.forEach(opt => {
             const option = document.createElement('option');
             option.value = opt;
             option.textContent = opt;
@@ -1109,15 +1202,15 @@ function cargarFiltrosLista() {
     }
 }
 
-// Actualizar Médicos según Especialidad
+// Actualizar Médicos según Especialidad (VERSIÓN DINÁMICA)
 document.getElementById('filterEspecialidad').addEventListener('change', function() {
     const medicoFilter = document.getElementById('filterMedico');
     const especialidad = this.value;
     
     medicoFilter.innerHTML = '<option value="">Todos los Médicos</option>';
     
-    if (especialidad && especialistas[especialidad]) {
-        especialistas[especialidad].forEach(med => {
+    if (especialidad && medicosPorEspecialidad[especialidad]) {
+        medicosPorEspecialidad[especialidad].forEach(med => {
             const opt = document.createElement('option');
             opt.value = med;
             opt.textContent = med;
@@ -1651,10 +1744,23 @@ function formatearTodosLosRUT() {
 
 
 
-// ====================== IMPRIMIR DASHBOARD PROFESIONAL (OPTIMIZADO) ======================
+// ====================== IMPRIMIR DASHBOARD PROFESIONAL (ACTUALIZADO) ======================
 function printDashboard() {
     const totalGestionables = document.getElementById('totalPatients').textContent;
-
+    const medianaGeneral = document.getElementById('medianaEsperaGeneral').innerHTML;
+    const medianaProgramacion = document.getElementById('medianaEsperaProgramacion').innerHTML;
+    const prioridadP1 = document.getElementById('prioridadP1').textContent;
+    const prioridadP2 = document.getElementById('prioridadP2').textContent;
+    const prioridadP3 = document.getElementById('prioridadP3').textContent;
+    const gesSi = document.getElementById('gesSi').textContent;
+    const gesNo = document.getElementById('gesNo').textContent;
+    
+    // Obtener la tabla de medianas por especialidad
+    const medianasTable = document.getElementById('medianasTable');
+    const topEsperaTable = document.getElementById('topEsperaTable');
+    const ultimosPacientesTable = document.getElementById('ultimosPacientesTable');
+    const crossTable = document.getElementById('crossTable');
+    
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
         <!DOCTYPE html>
@@ -1663,31 +1769,95 @@ function printDashboard() {
             <meta charset="UTF-8">
             <title>Dashboard - Unidad Prequirúrgico</title>
             <style>
+                * {
+                    margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
+                }
                 body {
-                    font-family: Arial, sans-serif;
-                    margin: 15px;
+                    font-family: 'Roboto', Arial, sans-serif;
+                    margin: 20px;
                     font-size: 12px;
-                    line-height: 1.3;
+                    line-height: 1.4;
+                    color: #1e2937;
                 }
                 .header {
                     text-align: center;
-                    margin-bottom: 20px;
+                    margin-bottom: 25px;
                     border-bottom: 4px solid #1e40af;
-                    padding-bottom: 12px;
+                    padding-bottom: 15px;
                 }
-                .logo { height: 70px; }
-                h1 { font-size: 20px; margin: 5px 0; color: #1e40af; }
-                h2 { font-size: 15px; margin: 3px 0; color: #334155; }
-                h3 { font-size: 13px; margin: 2px 0; color: #64748b; }
-
-                .total-big {
-                    font-size: 38px;
-                    font-weight: bold;
+                .logo {
+                    height: 70px;
+                }
+                h1 {
+                    font-size: 22px;
+                    margin: 8px 0 4px 0;
                     color: #1e40af;
-                    text-align: center;
-                    margin: 15px 0;
                 }
-
+                h2 {
+                    font-size: 16px;
+                    margin: 5px 0;
+                    color: #334155;
+                }
+                h3 {
+                    font-size: 14px;
+                    margin: 15px 0 10px 0;
+                    color: #1e40af;
+                    border-left: 4px solid #3b82f6;
+                    padding-left: 10px;
+                }
+                .stats-grid {
+                    display: grid;
+                    grid-template-columns: repeat(3, 1fr);
+                    gap: 15px;
+                    margin: 20px 0;
+                }
+                .stat-card {
+                    background: white;
+                    padding: 15px;
+                    border-radius: 10px;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                    text-align: center;
+                    border: 1px solid #e2e8f0;
+                }
+                .total-card {
+                    background: linear-gradient(135deg, #1e40af, #3b82f6);
+                    color: white;
+                }
+                .mediana-card {
+                    background: linear-gradient(135deg, #059669, #10b981);
+                    color: white;
+                }
+                .mediana-card2 {
+                    background: linear-gradient(135deg, #7c3aed, #8b5cf6);
+                    color: white;
+                }
+                .big-number {
+                    font-size: 32px;
+                    font-weight: 700;
+                    margin: 10px 0 0 0;
+                }
+                .stats-mini {
+                    display: grid;
+                    grid-template-columns: repeat(2, 1fr);
+                    gap: 15px;
+                    margin: 20px 0;
+                }
+                .priority-group, .ges-group {
+                    display: flex;
+                    justify-content: space-around;
+                    margin-top: 10px;
+                }
+                .priority-item, .ges-item {
+                    text-align: center;
+                }
+                .priority-color {
+                    display: inline-block;
+                    width: 25px;
+                    height: 25px;
+                    border-radius: 50%;
+                }
                 .charts-print {
                     display: flex;
                     gap: 15px;
@@ -1696,15 +1866,19 @@ function printDashboard() {
                 .chart-print {
                     flex: 1;
                     border: 1px solid #e2e8f0;
-                    padding: 8px;
+                    padding: 10px;
                     border-radius: 8px;
+                    text-align: center;
                 }
-
+                .chart-print img {
+                    width: 100%;
+                    max-height: 220px;
+                }
                 table {
                     width: 100%;
                     border-collapse: collapse;
-                    margin: 20px 0;
-                    font-size: 11.5px;
+                    margin: 15px 0;
+                    font-size: 11px;
                 }
                 th, td {
                     border: 1px solid #94a3b8;
@@ -1714,48 +1888,129 @@ function printDashboard() {
                 th {
                     background: #1e40af;
                     color: white;
-                    font-size: 12px;
+                    font-weight: 600;
                 }
-                tr:nth-child(even) { background: #f8fafc; }
-
+                tr:nth-child(even) {
+                    background: #f8fafc;
+                }
                 .footer {
-                    margin-top: 30px;
+                    margin-top: 35px;
                     text-align: center;
-                    font-size: 11px;
+                    font-size: 10px;
                     color: #64748b;
+                    border-top: 1px solid #cbd5e1;
+                    padding-top: 15px;
                 }
                 @media print {
-                    body { margin: 10px; }
+                    body {
+                        margin: 10px;
+                    }
+                    .no-print {
+                        display: none;
+                    }
                 }
             </style>
         </head>
         <body>
             <div class="header">
-                <img src="logo.png" alt="Hospital Illapel" class="logo">
+                <img src="logo.png" alt="Hospital Illapel" class="logo" onerror="this.style.display='none'">
                 <h1>FICHA DASHBOARD - UNIDAD PREQUIRÚRGICO</h1>
                 <h2>HOSPITAL DE ILLAPEL</h2>
                 <h3>RESUMEN GENERAL DE PACIENTES</h3>
+                <p>Fecha de generación: ${new Date().toLocaleDateString('es-CL')} ${new Date().toLocaleTimeString('es-CL')}</p>
             </div>
 
-            <h2>Total Pacientes Gestionables</h2>
-            <p class="total-big">${totalGestionables} PACIENTES</p>
+            <!-- Estadísticas principales -->
+            <div class="stats-grid">
+                <div class="stat-card total-card">
+                    <h3>Total Pacientes Gestionables</h3>
+                    <p class="big-number">${totalGestionables}</p>
+                </div>
+                <div class="stat-card mediana-card">
+                    <h3>📊 Mediana de Espera General</h3>
+                    <p class="big-number" style="font-size: 28px;">${medianaGeneral}</p>
+                </div>
+                <div class="stat-card mediana-card2">
+                    <h3>📊 Mediana Espera Programación</h3>
+                    <p class="big-number" style="font-size: 28px;">${medianaProgramacion}</p>
+                </div>
+            </div>
 
+            <!-- Prioridades y GES -->
+            <div class="stats-mini">
+                <div class="stat-card">
+                    <h3>🔄 Pacientes por Prioridad</h3>
+                    <div class="priority-group">
+                        <div class="priority-item">
+                            <span class="priority-color" style="background: #ef4444;"></span>
+                            <div><strong>P1</strong></div>
+                            <div style="font-size: 22px; font-weight: 700;">${prioridadP1}</div>
+                        </div>
+                        <div class="priority-item">
+                            <span class="priority-color" style="background: #f59e0b;"></span>
+                            <div><strong>P2</strong></div>
+                            <div style="font-size: 22px; font-weight: 700;">${prioridadP2}</div>
+                        </div>
+                        <div class="priority-item">
+                            <span class="priority-color" style="background: #10b981;"></span>
+                            <div><strong>P3</strong></div>
+                            <div style="font-size: 22px; font-weight: 700;">${prioridadP3}</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <h3>✅ GES vs NO GES</h3>
+                    <div class="ges-group">
+                        <div class="ges-item">
+                            <span class="priority-color" style="background: #3b82f6;"></span>
+                            <div><strong>GES SI</strong></div>
+                            <div style="font-size: 22px; font-weight: 700;">${gesSi}</div>
+                        </div>
+                        <div class="ges-item">
+                            <span class="priority-color" style="background: #94a3b8;"></span>
+                            <div><strong>GES NO</strong></div>
+                            <div style="font-size: 22px; font-weight: 700;">${gesNo}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Gráficos -->
             <div class="charts-print">
                 <div class="chart-print">
                     <h3>Pacientes por Especialidad</h3>
-                    <img src="${document.getElementById('especialidadChart').toDataURL()}" style="width:100%; max-height:220px;">
+                    <img src="${document.getElementById('especialidadChart').toDataURL()}" alt="Gráfico Especialidad">
                 </div>
                 <div class="chart-print">
                     <h3>Pacientes por Estatus Tabla</h3>
-                    <img src="${document.getElementById('estatusChart').toDataURL()}" style="width:100%; max-height:220px;">
+                    <img src="${document.getElementById('estatusChart').toDataURL()}" alt="Gráfico Estatus">
                 </div>
             </div>
 
+            <!-- Gráfico de tendencia -->
+            <div class="chart-print" style="margin: 20px 0;">
+                <h3>📈 Ingresos por Mes (Fecha Indicación Qx)</h3>
+                <img src="${document.getElementById('tendenciaChart')?.toDataURL() || ''}" alt="Gráfico Tendencia" style="max-width: 100%;">
+            </div>
+
+            <!-- Medianas por especialidad -->
+            <h3>📊 Medianas de Espera por Especialidad</h3>
+            ${medianasTable ? medianasTable.outerHTML : '<p>No hay datos disponibles</p>'}
+
+            <!-- Tabla cruzada -->
             <h3>📊 Pacientes por Especialidad vs Estatus</h3>
-            ${document.getElementById('crossTable').outerHTML}
+            ${crossTable ? crossTable.outerHTML : '<p>No hay datos disponibles</p>'}
+
+            <!-- Top pacientes con mayor espera -->
+            <h3>⚠️ Pacientes con Mayor Tiempo de Espera</h3>
+            ${topEsperaTable ? topEsperaTable.outerHTML : '<p>No hay datos disponibles</p>'}
+
+            <!-- Últimos pacientes registrados -->
+            <h3>🆕 Últimos 5 Pacientes Registrados</h3>
+            ${ultimosPacientesTable ? ultimosPacientesTable.outerHTML : '<p>No hay datos disponibles</p>'}
 
             <div class="footer">
-                Generado por Sistema Unidad Prequirúrgica • ${new Date().toLocaleDateString('es-CL')} ${new Date().toLocaleTimeString('es-CL')}
+                Generado por Sistema Unidad Prequirúrgica - Hospital de Illapel
             </div>
         </body>
         </html>
@@ -2303,4 +2558,472 @@ async function reactivateUser(userKey, email) {
     } catch (error) {
         alert("Error: " + error.message);
     }
+}
+
+// ====================== CANCELAR EDICIÓN ======================
+function cancelarEdicion() {
+    if (confirm("¿Cancelar la edición? Los cambios no guardados se perderán.")) {
+        // Limpiar el formulario
+        resetForm();
+        
+        // Ocultar el botón de cancelar
+        document.getElementById('btnCancelarEdicion').style.display = 'none';
+        
+        // Redirigir a la lista de pacientes
+        showSection('patientList');
+        
+        // Limpiar la variable global
+        currentPatientKey = null;
+        currentModalPatient = null;
+    }
+}
+
+// ====================== CARGAR CONFIGURACIÓN DESDE FIREBASE ======================
+async function cargarConfiguracionFiltros() {
+    try {
+        const snapshot = await db.ref(CONFIG_DB_PATH).once('value');
+        const data = snapshot.val();
+        
+        if (data) {
+            if (data.especialidades) especialidadesLista = data.especialidades;
+            if (data.medicosPorEspecialidad) medicosPorEspecialidad = data.medicosPorEspecialidad;
+            if (data.estatusTabla) estatusTablaLista = data.estatusTabla;
+        }
+        
+        // Si no hay datos, usar valores por defecto
+        if (especialidadesLista.length === 0) {
+            especialidadesLista = Object.keys(especialistas);
+        }
+        
+        if (Object.keys(medicosPorEspecialidad).length === 0) {
+            medicosPorEspecialidad = JSON.parse(JSON.stringify(especialistas));
+        }
+        
+        if (estatusTablaLista.length === 0) {
+            estatusTablaLista = ['PROGRAMABLE','PENDIENTE EPA','NO PROGRAMABLE','ACTUALIZAR','CARTA CERTIFICADA','OPERADO','EGRESO','TRASLADO INTERNO','RECHAZO','EXCEPTUADO TRANSITORIO','EXCEPTUADO POR RECHAZO','EXCEPTUADO INUBICABLE'];
+        }
+        
+        // Sincronizar con el objeto global especialistas
+        Object.keys(medicosPorEspecialidad).forEach(esp => {
+            especialistas[esp] = medicosPorEspecialidad[esp];
+        });
+        
+        // Refrescar todos los selects
+        refrescarTodosLosSelectsFiltros();
+        
+        // Si es admin, cargar datos en el panel
+        if (currentUserRole === 'admin') {
+            cargarDatosEnPanelAdmin();
+        }
+        
+    } catch (error) {
+        console.error("Error cargando configuración:", error);
+    }
+}
+
+async function guardarConfiguracionFiltros() {
+    if (currentUserRole !== 'admin') return;
+    
+    const dataToSave = {
+        especialidades: especialidadesLista,
+        medicosPorEspecialidad: medicosPorEspecialidad,
+        estatusTabla: estatusTablaLista,
+        ultimaModificacion: firebase.database.ServerValue.TIMESTAMP,
+        modificadoPor: currentUser ? currentUser.email : 'Sistema'
+    };
+    
+    await db.ref(CONFIG_DB_PATH).set(dataToSave);
+}
+
+function refrescarTodosLosSelectsFiltros() {
+    // 1. Refrescar select de Especialidad en formulario NUEVO PACIENTE
+    const espSelect = document.getElementById('especialidad');
+    if (espSelect) {
+        const valorActual = espSelect.value;
+        espSelect.innerHTML = '<option value="">Seleccionar Especialidad</option>';
+        especialidadesLista.forEach(esp => {
+            const opt = document.createElement('option');
+            opt.value = esp;
+            opt.textContent = esp;
+            espSelect.appendChild(opt);
+        });
+        if (valorActual && especialidadesLista.includes(valorActual)) espSelect.value = valorActual;
+    }
+    
+    // 2. Refrescar select de Especialidad en FILTROS
+    const filterEsp = document.getElementById('filterEspecialidad');
+    if (filterEsp) {
+        const valorActual = filterEsp.value;
+        filterEsp.innerHTML = '<option value="">Todas las Especialidades</option>';
+        especialidadesLista.forEach(esp => {
+            const opt = document.createElement('option');
+            opt.value = esp;
+            opt.textContent = esp;
+            filterEsp.appendChild(opt);
+        });
+        if (valorActual) filterEsp.value = valorActual;
+    }
+    
+    // 3. Refrescar select de Estatus Tabla en formulario
+    const estatusSelect = document.getElementById('estatusTabla');
+    if (estatusSelect) {
+        const valorActual = estatusSelect.value;
+        estatusSelect.innerHTML = '<option value="">Seleccionar Estatus</option>';
+        estatusTablaLista.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt;
+            option.textContent = opt;
+            estatusSelect.appendChild(option);
+        });
+        if (valorActual && estatusTablaLista.includes(valorActual)) estatusSelect.value = valorActual;
+    }
+    
+    // 4. Refrescar select de Estatus Tabla en FILTROS
+    const filterEstatus = document.getElementById('filterEstatus');
+    if (filterEstatus) {
+        const valorActual = filterEstatus.value;
+        filterEstatus.innerHTML = '<option value="">Todos los Estatus</option>';
+        estatusTablaLista.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt;
+            option.textContent = opt;
+            filterEstatus.appendChild(option);
+        });
+        if (valorActual) filterEstatus.value = valorActual;
+    }
+    
+    // 5. Refrescar médicos según especialidad seleccionada
+    const espActual = document.getElementById('especialidad')?.value;
+    if (espActual && medicosPorEspecialidad[espActual]) {
+        filterMedicos();
+    }
+}
+
+// ====================== FUNCIONES DEL PANEL ADMIN ======================
+function cargarDatosEnPanelAdmin() {
+    if (currentUserRole !== 'admin') return;
+    
+    // Cargar especialidades en el select
+    const adminEspSelect = document.getElementById('adminEspSelect');
+    if (adminEspSelect) {
+        adminEspSelect.innerHTML = '<option value="">Seleccionar Especialidad</option>';
+        especialidadesLista.forEach(esp => {
+            const opt = document.createElement('option');
+            opt.value = esp;
+            opt.textContent = esp;
+            adminEspSelect.appendChild(opt);
+        });
+    }
+    
+    // Cargar estatus
+    const adminEstatusList = document.getElementById('adminEstatusList');
+    if (adminEstatusList) {
+        adminEstatusList.innerHTML = '';
+        estatusTablaLista.forEach(est => {
+            const opt = document.createElement('option');
+            opt.value = est;
+            opt.textContent = est;
+            adminEstatusList.appendChild(opt);
+        });
+    }
+    
+    // Cargar médicos de la especialidad seleccionada (si hay una)
+    adminCargarMedicos();
+}
+
+function adminCargarMedicos() {
+    const esp = document.getElementById('adminEspSelect').value;
+    const adminMedicosList = document.getElementById('adminMedicosList');
+    if (!adminMedicosList) return;
+    
+    // Si no hay especialidad seleccionada, limpiar la lista
+    if (!esp) {
+        adminMedicosList.innerHTML = '<option value="">-- Selecciona una especialidad primero --</option>';
+        return;
+    }
+    
+    // Cargar los médicos de la especialidad seleccionada
+    adminMedicosList.innerHTML = '';
+    const medicos = medicosPorEspecialidad[esp] || [];
+    
+    if (medicos.length === 0) {
+        adminMedicosList.innerHTML = '<option value="">-- No hay médicos registrados --</option>';
+    } else {
+        medicos.forEach(med => {
+            const opt = document.createElement('option');
+            opt.value = med;
+            opt.textContent = med;
+            adminMedicosList.appendChild(opt);
+        });
+    }
+}
+
+async function adminAgregarEspecialidad() {
+    const nuevaEsp = document.getElementById('adminNuevaEspecialidad').value.trim().toUpperCase();
+    if (!nuevaEsp) { alert("Ingresa el nombre de la especialidad"); return; }
+    if (especialidadesLista.includes(nuevaEsp)) { alert("Esta especialidad ya existe"); return; }
+    
+    especialidadesLista.push(nuevaEsp);
+    especialidadesLista.sort();
+    medicosPorEspecialidad[nuevaEsp] = [];
+    
+    await guardarConfiguracionFiltros();
+    refrescarTodosLosSelectsFiltros();
+    cargarDatosEnPanelAdmin();
+    document.getElementById('adminNuevaEspecialidad').value = '';
+    alert(`✅ Especialidad "${nuevaEsp}" agregada correctamente`);
+}
+
+async function adminAgregarMedico() {
+    const esp = document.getElementById('adminEspSelect').value;
+    const nuevoMedico = document.getElementById('adminNuevoMedico').value.trim().toUpperCase();
+    
+    if (!esp) { alert("Selecciona una especialidad primero"); return; }
+    if (!nuevoMedico) { alert("Ingresa el nombre del médico"); return; }
+    
+    if (!medicosPorEspecialidad[esp]) medicosPorEspecialidad[esp] = [];
+    if (medicosPorEspecialidad[esp].includes(nuevoMedico)) {
+        alert("Este médico ya existe en esta especialidad");
+        return;
+    }
+    
+    medicosPorEspecialidad[esp].push(nuevoMedico);
+    medicosPorEspecialidad[esp].sort();
+    
+    await guardarConfiguracionFiltros();
+    refrescarTodosLosSelectsFiltros();
+    adminCargarMedicos();
+    document.getElementById('adminNuevoMedico').value = '';
+    alert(`✅ Médico "${nuevoMedico}" agregado a ${esp}`);
+}
+
+async function adminEliminarMedico() {
+    const esp = document.getElementById('adminEspSelect').value;
+    const adminMedicosList = document.getElementById('adminMedicosList');
+    const medicoSeleccionado = adminMedicosList?.value;
+    
+    if (!esp || !medicoSeleccionado) { alert("Selecciona un médico para eliminar"); return; }
+    if (!confirm(`¿Eliminar al médico "${medicoSeleccionado}" de ${esp}?`)) return;
+    
+    const index = medicosPorEspecialidad[esp].indexOf(medicoSeleccionado);
+    if (index !== -1) medicosPorEspecialidad[esp].splice(index, 1);
+    
+    await guardarConfiguracionFiltros();
+    refrescarTodosLosSelectsFiltros();
+    adminCargarMedicos();
+    alert(`✅ Médico "${medicoSeleccionado}" eliminado`);
+}
+
+async function adminAgregarEstatus() {
+    const nuevoEstatus = document.getElementById('adminNuevoEstatus').value.trim().toUpperCase();
+    if (!nuevoEstatus) { alert("Ingresa un nuevo estatus"); return; }
+    if (estatusTablaLista.includes(nuevoEstatus)) { alert("Este estatus ya existe"); return; }
+    
+    estatusTablaLista.push(nuevoEstatus);
+    estatusTablaLista.sort();
+    
+    await guardarConfiguracionFiltros();
+    refrescarTodosLosSelectsFiltros();
+    cargarDatosEnPanelAdmin();
+    document.getElementById('adminNuevoEstatus').value = '';
+    alert(`✅ Estatus "${nuevoEstatus}" agregado correctamente`);
+}
+
+async function adminEliminarEstatus() {
+    const adminEstatusList = document.getElementById('adminEstatusList');
+    const estatusSeleccionado = adminEstatusList?.value;
+    
+    if (!estatusSeleccionado) { alert("Selecciona un estatus para eliminar"); return; }
+    if (!confirm(`¿Eliminar el estatus "${estatusSeleccionado}"?`)) return;
+    
+    const index = estatusTablaLista.indexOf(estatusSeleccionado);
+    if (index !== -1) estatusTablaLista.splice(index, 1);
+    
+    await guardarConfiguracionFiltros();
+    refrescarTodosLosSelectsFiltros();
+    cargarDatosEnPanelAdmin();
+    alert(`✅ Estatus "${estatusSeleccionado}" eliminado`);
+}
+
+async function adminRestablecerDefault() {
+    if (!confirm("⚠️ ¿Restablecer todos los valores por defecto?\nEsto eliminará todas las especialidades, médicos y estatus que hayas agregado.")) return;
+    
+    // Valores por defecto
+    especialidadesLista = Object.keys(especialistas);
+    medicosPorEspecialidad = JSON.parse(JSON.stringify(especialistas));
+    estatusTablaLista = ['PROGRAMABLE','PENDIENTE EPA','NO PROGRAMABLE','ACTUALIZAR','CARTA CERTIFICADA','OPERADO','EGRESO','TRASLADO INTERNO','RECHAZO','EXCEPTUADO TRANSITORIO','EXCEPTUADO POR RECHAZO','EXCEPTUADO INUBICABLE'];
+    
+    await guardarConfiguracionFiltros();
+    refrescarTodosLosSelectsFiltros();
+    cargarDatosEnPanelAdmin();
+    alert("✅ Valores restablecidos a los originales");
+}
+
+
+// ====================== EVENTOS DEL PANEL ADMIN ======================
+document.getElementById('adminEspSelect')?.addEventListener('change', function() {
+    adminCargarMedicos();
+});
+
+// ====================== FUNCIONES DE MEDIANA ======================
+function calcularMediana(arr) {
+    if (arr.length === 0) return 0;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    if (sorted.length % 2 === 0) {
+        return Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+    } else {
+        return sorted[mid];
+    }
+}
+
+// ====================== TABLA DE MEDIANAS POR ESPECIALIDAD ======================
+function renderMedianasPorEspecialidad(pacientesFiltrados) {
+    const tbody = document.getElementById('medianasTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    
+    const especialidades = [...new Set(pacientesFiltrados.map(p => p.especialidad).filter(e => e))];
+    especialidades.sort();
+    
+    especialidades.forEach(esp => {
+        const pacientesEsp = pacientesFiltrados.filter(p => p.especialidad === esp);
+        const tiemposEsp = pacientesEsp.map(p => calculateWaitingDays(p.fechaIndQx)).filter(t => t > 0);
+        const tiemposProgramEsp = pacientesEsp.map(p => calculateWaitingDays(p.fechaEstatusProgram)).filter(t => t > 0);
+        
+        const medianaEsp = calcularMediana(tiemposEsp);
+        const medianaProgramEsp = calcularMediana(tiemposProgramEsp);
+        const total = pacientesEsp.length;
+        
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td><strong>${esp}</strong></td>
+            <td>${medianaEsp} días</span></strong></span></span></strong></span></span></span></span></span></td>
+            <td>${medianaProgramEsp} días</span></strong></span></span></span></strong></span></span></span></span></span></td>
+            <td>${total}</span></strong></span></span></span></strong></span></span></span></span></span></td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+// ====================== TOP PACIENTES CON MAYOR ESPERA ======================
+function renderTopEspera(pacientesFiltrados) {
+    const tbody = document.getElementById('topEsperaBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    
+    const top10 = [...pacientesFiltrados]
+        .sort((a, b) => calculateWaitingDays(b.fechaIndQx) - calculateWaitingDays(a.fechaIndQx))
+        .slice(0, 10);
+    
+    top10.forEach(p => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${p.nombreApellido || '-'}</span></strong></span></span></span></strong></span></span></span></span></span></td>
+            <td>${p.rut || '-'}</span></strong></span></span></span></strong></span></span></span></span></span></td>
+            <td>${p.especialidad || '-'}</span></strong></span></span></span></strong></span></span></span></span></span></td>
+            <td><strong style="color: #ef4444;">${calculateWaitingDays(p.fechaIndQx)} días</strong></span></strong></span></span></span></strong></span></span></span></span></span></td>
+            <td>${p.prioridad || '-'}</span></strong></span></span></span></strong></span></span></span></span></span></td>
+            <td><button onclick="showPatientModal('${p.firebaseKey}')" class="btn-secondary" style="padding: 4px 12px;">Ver</button></span></strong></span></span></span></strong></span></span></span></span></span></td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+// ====================== ÚLTIMOS PACIENTES REGISTRADOS ======================
+function renderUltimosPacientes(pacientesFiltrados) {
+    const tbody = document.getElementById('ultimosPacientesBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    
+    const ultimos5 = [...pacientesFiltrados]
+        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+        .slice(0, 5);
+    
+    ultimos5.forEach(p => {
+        const fechaRegistro = p.timestamp ? new Date(p.timestamp).toLocaleDateString('es-CL') : '-';
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${fechaRegistro}</span></strong></span></span></span></strong></span></span></span></span></span></td>
+            <td>${p.nombreApellido || '-'}</span></strong></span></span></span></strong></span></span></span></span></span></td>
+            <td>${p.rut || '-'}</span></strong></span></span></span></strong></span></span></span></span></span></td>
+            <td>${p.especialidad || '-'}</span></strong></span></span></span></strong></span></span></span></span></span></td>
+            <td>${p.estatusTabla || '-'}</span></strong></span></span></span></strong></span></span></span></span></span></td>
+            <td>${p.intervencion || '-'}</span></strong></span></span></span></strong></span></span></span></span></span></td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+// ====================== GRÁFICO DE TENDENCIA MENSUAL ======================
+function renderTendenciaMensual(pacientesFiltrados) {
+    const ctx = document.getElementById('tendenciaChart');
+    if (!ctx) return;
+    if (tendenciaChartInstance) tendenciaChartInstance.destroy();
+    
+    const meses = {};
+    pacientesFiltrados.forEach(p => {
+        if (p.fechaIndQx) {
+            const fecha = new Date(p.fechaIndQx);
+            const mesKey = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`;
+            meses[mesKey] = (meses[mesKey] || 0) + 1;
+        }
+    });
+    
+    const labels = Object.keys(meses).sort();
+    const datos = labels.map(l => meses[l]);
+    
+    tendenciaChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Pacientes ingresados',
+                data: datos,
+                borderColor: '#3b82f6',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                fill: true,
+                tension: 0.4,
+                pointBackgroundColor: '#1e40af',
+                pointBorderColor: '#fff',
+                pointRadius: 5,
+                pointHoverRadius: 7
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: { position: 'top' },
+                tooltip: { callbacks: { label: (ctx) => `${ctx.raw} pacientes` } }
+            }
+        }
+    });
+}
+
+// ====================== FILTRO DEL DASHBOARD ======================
+function actualizarDashboardConFiltro() {
+    const select = document.getElementById('dashboardFilterEspecialidad');
+    dashboardFiltroEspecialidad = select.value;
+    updateDashboard();
+}
+
+function limpiarFiltroDashboard() {
+    document.getElementById('dashboardFilterEspecialidad').value = '';
+    dashboardFiltroEspecialidad = '';
+    updateDashboard();
+}
+
+function cargarEspecialidadesEnFiltroDashboard() {
+    const select = document.getElementById('dashboardFilterEspecialidad');
+    if (!select) return;
+    const especialidades = [...new Set(patients.map(p => p.especialidad).filter(e => e))];
+    especialidades.sort();
+    select.innerHTML = '<option value="">Todas las Especialidades</option>';
+    especialidades.forEach(esp => {
+        const opt = document.createElement('option');
+        opt.value = esp;
+        opt.textContent = esp;
+        select.appendChild(opt);
+    });
 }
