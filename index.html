@@ -71,29 +71,11 @@
             <p class="forgot-password">
                 <a href="#" onclick="forgotPassword()">¿Olvidaste tu contraseña?</a>
             </p>
-            <p class="register-link">¿No tienes cuenta? <a href="#" onclick="showRegister()">Registrarse</a></p>
+            <p class="register-link" style="color: #64748b;">⚠️ Solo administradores pueden crear cuentas</p>
         </div>
     </div>
 
-    <!-- REGISTER SECTION -->
-    <div id="registerSection" class="login-container" style="display: none;">
-        <div class="login-box">
-            <img src="logo.png" alt="Logo" class="login-logo" onerror="this.style.display='none'">
-            <h2>Crear Cuenta</h2>
-            <form id="registerForm">
-                <div class="form-group">
-                    <label for="regEmail">Correo Electrónico</label>
-                    <input type="email" id="regEmail" required>
-                </div>
-                <div class="form-group">
-                    <label for="regPassword">Contraseña (mín. 6 caracteres)</label>
-                    <input type="password" id="regPassword" required>
-                </div>
-                <button type="submit" class="btn-primary">Registrarse</button>
-            </form>
-            <p class="register-link">¿Ya tienes cuenta? <a href="#" onclick="showLogin()">Iniciar Sesión</a></p>
-        </div>
-    </div>
+
 
     <!-- MAIN APP -->
     <div id="mainApp" class="main-app" style="display: none;">
@@ -472,6 +454,37 @@
             <section id="usersSection" class="section" style="display: none;">
                 <h2>👥 Gestión de Usuarios</h2>
                 <p style="color:#64748b; margin-bottom:20px;">Solo visible para Administradores • Total: <strong id="totalUsers">0</strong></p>
+                
+                
+               <!-- ===== FORMULARIO PARA CREAR NUEVOS USUARIOS (AGREGAR AQUÍ) ===== -->
+    <div id="createUserPanel" style="background: #f8fafc; padding: 20px; border-radius: 12px; margin-bottom: 25px;">
+        <h3 style="color: #1e40af; margin-bottom: 15px;">👤 Crear Nuevo Usuario</h3>
+        <div style="display: flex; flex-wrap: wrap; gap: 15px; align-items: flex-end;">
+            <div class="form-group" style="flex: 2; min-width: 250px;">
+                <label>Correo Electrónico</label>
+                <input type="email" id="newUserEmail" placeholder="usuario@hospital.cl" style="width: 100%; padding: 10px;">
+            </div>
+            <div class="form-group" style="flex: 1; min-width: 150px;">
+                <label>Contraseña</label>
+                <input type="password" id="newUserPassword" placeholder="Mínimo 6 caracteres" style="width: 100%; padding: 10px;">
+            </div>
+            <div class="form-group" style="flex: 1; min-width: 130px;">
+                <label>Rol</label>
+                <select id="newUserRole" style="width: 100%; padding: 10px;">
+                    <option value="user">👤 Usuario</option>
+                    <option value="admin">🛡️ Administrador</option>
+                </select>
+            </div>
+            <button onclick="crearUsuarioPorAdmin()" class="btn-primary" style="padding: 10px 20px;">➕ Crear Usuario</button>
+        </div>
+        <p style="font-size: 0.8rem; color: #64748b; margin-top: 10px;">
+            ⚡ El usuario podrá iniciar sesión inmediatamente con la contraseña asignada.
+        </p>
+    </div> 
+                
+                
+                
+                
                 
                 <div class="table-container">
                     <table id="usersTable" class="users-table">
