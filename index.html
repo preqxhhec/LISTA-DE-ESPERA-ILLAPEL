@@ -411,6 +411,14 @@
                         <select id="filterEstatus" onchange="filterPatients()"></select>
                     </div>
                     <div class="filter-group">
+                         <label>Comuna</label>
+                         <select id="filterComuna" onchange="filterPatients()">
+                         <option value="">Todas las Comunas</option>
+                            </select>
+                    </div>
+
+
+                    <div class="filter-group">
                         <label>Desde (Ind. Qx)</label>
                         <input type="date" id="filterFechaDesde" onchange="filterPatients()">
                     </div>
@@ -553,6 +561,56 @@
         </div>
         
     </div>
+
+<!-- 3. Gestión de Estatus EPA -->
+<div style="background: #f8fafc; padding: 20px; border-radius: 12px;">
+    <h4 style="color: #1e40af; margin-bottom: 15px;">🔬 Estatus EPA</h4>
+    
+    <div class="form-group">
+        <label>Lista de Estatus EPA</label>
+        <select id="adminEpaList" size="5" style="width: 100%; padding: 8px; min-height: 120px;"></select>
+    </div>
+    
+    <div style="display: flex; gap: 10px; margin: 15px 0;">
+        <input type="text" id="adminNuevoEpa" placeholder="Nuevo Estatus EPA" style="flex: 1; padding: 8px;">
+        <button onclick="adminAgregarEpa()" class="btn-primary" style="padding: 8px 16px;">➕ Agregar</button>
+    </div>
+    <button onclick="adminEliminarEpa()" class="btn-danger" style="width: 100%; padding: 8px;">🗑️ Eliminar Estatus EPA</button>
+</div>
+
+<!-- 4. Gestión de Anestesiólogos -->
+<div style="background: #f8fafc; padding: 20px; border-radius: 12px;">
+    <h4 style="color: #1e40af; margin-bottom: 15px;">💉 Anestesiólogos</h4>
+    
+    <div class="form-group">
+        <label>Lista de Anestesiólogos</label>
+        <select id="adminAnestesiologosList" size="5" style="width: 100%; padding: 8px; min-height: 120px;"></select>
+    </div>
+    
+    <div style="display: flex; gap: 10px; margin: 15px 0;">
+        <input type="text" id="adminNuevoAnestesiologo" placeholder="Nombre del Anestesiólogo" style="flex: 1; padding: 8px;">
+        <button onclick="adminAgregarAnestesiologo()" class="btn-primary" style="padding: 8px 16px;">➕ Agregar</button>
+    </div>
+    <button onclick="adminEliminarAnestesiologo()" class="btn-danger" style="width: 100%; padding: 8px;">🗑️ Eliminar Anestesiólogo</button>
+</div>
+
+<!-- 5. Gestión de Comunas -->
+<div style="background: #f8fafc; padding: 20px; border-radius: 12px;">
+    <h4 style="color: #1e40af; margin-bottom: 15px;">🏠 Comunas</h4>
+    
+    <div class="form-group">
+        <label>Lista de Comunas</label>
+        <select id="adminComunasList" size="5" style="width: 100%; padding: 8px; min-height: 120px;"></select>
+    </div>
+    
+    <div style="display: flex; gap: 10px; margin: 15px 0;">
+        <input type="text" id="adminNuevaComuna" placeholder="Nueva Comuna" style="flex: 1; padding: 8px;">
+        <button onclick="adminAgregarComuna()" class="btn-primary" style="padding: 8px 16px;">➕ Agregar</button>
+    </div>
+    <button onclick="adminEliminarComuna()" class="btn-danger" style="width: 100%; padding: 8px;">🗑️ Eliminar Comuna</button>
+</div>
+
+    
     
     <div style="margin-top: 20px; text-align: center;">
         <button onclick="adminRestablecerDefault()" class="btn-secondary" style="background: #f59e0b; padding: 10px 24px;">
