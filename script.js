@@ -383,6 +383,8 @@ let estatusEpaLista = [];          // Opciones de estatus EPA
 let anestesiologosLista = [];      // Lista de anestesiólogos
 let comunasLista = [];             // Lista de comunas
 
+
+
 // Ruta en Firebase para guardar configuraciones
 const CONFIG_DB_PATH = 'configuracion/filtrosDinamicos';
 
@@ -1163,6 +1165,18 @@ function cargarFiltrosLista() {
             filterEstatus.appendChild(option);
         });
     }
+    
+    // ========== NUEVO: FILTRO POR COMUNA ==========
+    const filterComuna = document.getElementById('filterComuna');
+    if (filterComuna) {
+        filterComuna.innerHTML = '<option value="">Todas las Comunas</option>';
+        comunasLista.forEach(comuna => {
+            const option = document.createElement('option');
+            option.value = comuna;
+            option.textContent = comuna;
+            filterComuna.appendChild(option);
+        });
+    }
 }
 
 // Actualizar Médicos según Especialidad (VERSIÓN DINÁMICA)
@@ -1182,20 +1196,20 @@ document.getElementById('filterEspecialidad').addEventListener('change', functio
     }
 });
 
-// ====================== FILTRADO PRINCIPAL ======================
 
-//aquiii
+
 // ====================== VARIABLES GLOBALES DE FILTROS ======================
 let soloSinFolio = false;
 let mostrarDuplicados = false;
 
-// ====================== FILTRADO PRINCIPAL ======================
+
 // ====================== FILTRADO PRINCIPAL ======================
 function filterPatients() {
     const busqueda = (document.getElementById('busquedaGeneral')?.value || '').toLowerCase().trim();
     const especialidad = document.getElementById('filterEspecialidad').value;
     const medico = document.getElementById('filterMedico').value;
     const estatus = document.getElementById('filterEstatus').value;
+    const comuna = document.getElementById('filterComuna')?.value || '';
     const fechaDesde = document.getElementById('filterFechaDesde').value;
     const fechaHasta = document.getElementById('filterFechaHasta').value;
 
@@ -1217,6 +1231,7 @@ function filterPatients() {
         if (especialidad && p.especialidad !== especialidad) pasa = false;
         if (medico && p.medicoTratante !== medico) pasa = false;
         if (estatus && p.estatusTabla !== estatus) pasa = false;
+        if (comuna && p.comuna !== comuna) pasa = false;
 
         if (fechaDesde || fechaHasta) {
             const fechaInd = new Date(p.fechaIndQx || 0);
@@ -1341,6 +1356,7 @@ function clearFilters() {
     document.getElementById('filterEspecialidad').value = '';
     document.getElementById('filterMedico').value = '';
     document.getElementById('filterEstatus').value = '';
+    document.getElementById('filterComuna').value = '';
     document.getElementById('filterFechaDesde').value = '';
     document.getElementById('filterFechaHasta').value = '';
 
@@ -2260,6 +2276,7 @@ function guardarFiltrosActuales() {
         filterEspecialidad: document.getElementById('filterEspecialidad')?.value || '',
         filterMedico: document.getElementById('filterMedico')?.value || '',
         filterEstatus: document.getElementById('filterEstatus')?.value || '',
+        filterComuna: document.getElementById('filterComuna')?.value || '',
         filterFechaDesde: document.getElementById('filterFechaDesde')?.value || '',
         filterFechaHasta: document.getElementById('filterFechaHasta')?.value || '',
         soloSinFolio: soloSinFolio,
@@ -2274,6 +2291,7 @@ function restaurarFiltros() {
     document.getElementById('filterEspecialidad').value = lastFilters.filterEspecialidad || '';
     document.getElementById('filterMedico').value = lastFilters.filterMedico || '';
     document.getElementById('filterEstatus').value = lastFilters.filterEstatus || '';
+     document.getElementById('filterComuna').value = lastFilters.filterComuna || '';
     document.getElementById('filterFechaDesde').value = lastFilters.filterFechaDesde || '';
     document.getElementById('filterFechaHasta').value = lastFilters.filterFechaHasta || '';
 
@@ -2379,21 +2397,7 @@ function loadUsers() {
     });
 }
 
-// ====================== DESACTIVAR USUARIO ======================
-async function deactivateUser(userKey, email) {
-    if (!confirm(`¿Desactivar al usuario?\n\n${email}`)) return;
 
-    const clave = prompt("🔑 Ingresa clave de administrador:");
-    if (clave !== "Adm123") return alert("❌ Clave incorrecta.");
-
-    try {
-        await db.ref('users/' + userKey).update({ role: "disabled" });
-        alert(`✅ Usuario ${email} desactivado.`);
-        loadUsers();
-    } catch (error) {
-        alert("Error: " + error.message);
-    }
-}
 
 
 
@@ -2506,6 +2510,12 @@ async function cargarConfiguracionFiltros() {
             if (data.especialidades) especialidadesLista = data.especialidades;
             if (data.medicosPorEspecialidad) medicosPorEspecialidad = data.medicosPorEspecialidad;
             if (data.estatusTabla) estatusTablaLista = data.estatusTabla;
+            
+            // ========== NUEVAS LÍNEAS ==========
+            if (data.estatusEpa) estatusEpaLista = data.estatusEpa;
+            if (data.anestesiologos) anestesiologosLista = data.anestesiologos;
+            if (data.comunas) comunasLista = data.comunas;
+            // ==================================
         }
         
         // Si no hay datos, usar valores por defecto
@@ -2520,6 +2530,20 @@ async function cargarConfiguracionFiltros() {
         if (estatusTablaLista.length === 0) {
             estatusTablaLista = ['PROGRAMABLE','PENDIENTE EPA','NO PROGRAMABLE','ACTUALIZAR','CARTA CERTIFICADA','OPERADO','EGRESO','TRASLADO INTERNO','RECHAZO','EXCEPTUADO TRANSITORIO','EXCEPTUADO POR RECHAZO','EXCEPTUADO INUBICABLE'];
         }
+        
+        // ========== NUEVOS VALORES POR DEFECTO ==========
+        if (estatusEpaLista.length === 0) {
+            estatusEpaLista = ['PENDIENTE', 'AGENDADO', 'REALIZADO', 'NO APLICA'];
+        }
+        
+        if (anestesiologosLista.length === 0) {
+            anestesiologosLista = ['DR. DANILO NAVA', 'DR. PEDRO GOLES', 'DRA. MARIANGEL YANES', 'DRA. RAQUEL VALERO', 'DRA. MARINELA RICCOBONO', 'DR. ROBERTO OROZCO', 'DR. DANIEL RIQUELME', 'DR. ANGEL MONTIEL'];
+        }
+        
+        if (comunasLista.length === 0) {
+            comunasLista = ['ILLAPEL', 'CANELA', 'LOS VILOS', 'SALAMANCA'];
+        }
+        // =================================================
         
         // Sincronizar con el objeto global especialistas
         Object.keys(medicosPorEspecialidad).forEach(esp => {
@@ -2546,6 +2570,9 @@ async function guardarConfiguracionFiltros() {
         especialidades: especialidadesLista,
         medicosPorEspecialidad: medicosPorEspecialidad,
         estatusTabla: estatusTablaLista,
+        estatusEpa: estatusEpaLista,
+        anestesiologos: anestesiologosLista,
+        comunas: comunasLista,
         ultimaModificacion: firebase.database.ServerValue.TIMESTAMP,
         modificadoPor: currentUser ? currentUser.email : 'Sistema'
     };
@@ -2553,36 +2580,25 @@ async function guardarConfiguracionFiltros() {
     await db.ref(CONFIG_DB_PATH).set(dataToSave);
 }
 
+// ====================== REFRESCAR TODOS LOS SELECTS ======================
 function refrescarTodosLosSelectsFiltros() {
-    // 1. Refrescar select de Especialidad en formulario NUEVO PACIENTE
-    const espSelect = document.getElementById('especialidad');
-    if (espSelect) {
-        const valorActual = espSelect.value;
-        espSelect.innerHTML = '<option value="">Seleccionar Especialidad</option>';
+    // 1. Especialidad (formulario nuevo paciente)
+    const especialidadSelect = document.getElementById('especialidad');
+    if (especialidadSelect) {
+        const valorActual = especialidadSelect.value;
+        especialidadSelect.innerHTML = '<option value="">Seleccionar Especialidad</option>';
         especialidadesLista.forEach(esp => {
-            const opt = document.createElement('option');
-            opt.value = esp;
-            opt.textContent = esp;
-            espSelect.appendChild(opt);
+            const option = document.createElement('option');
+            option.value = esp;
+            option.textContent = esp;
+            especialidadSelect.appendChild(option);
         });
-        if (valorActual && especialidadesLista.includes(valorActual)) espSelect.value = valorActual;
+        if (valorActual && especialidadesLista.includes(valorActual)) {
+            especialidadSelect.value = valorActual;
+        }
     }
     
-    // 2. Refrescar select de Especialidad en FILTROS
-    const filterEsp = document.getElementById('filterEspecialidad');
-    if (filterEsp) {
-        const valorActual = filterEsp.value;
-        filterEsp.innerHTML = '<option value="">Todas las Especialidades</option>';
-        especialidadesLista.forEach(esp => {
-            const opt = document.createElement('option');
-            opt.value = esp;
-            opt.textContent = esp;
-            filterEsp.appendChild(opt);
-        });
-        if (valorActual) filterEsp.value = valorActual;
-    }
-    
-    // 3. Refrescar select de Estatus Tabla en formulario
+    // 2. Estatus Tabla (formulario nuevo paciente)
     const estatusSelect = document.getElementById('estatusTabla');
     if (estatusSelect) {
         const valorActual = estatusSelect.value;
@@ -2593,35 +2609,70 @@ function refrescarTodosLosSelectsFiltros() {
             option.textContent = opt;
             estatusSelect.appendChild(option);
         });
-        if (valorActual && estatusTablaLista.includes(valorActual)) estatusSelect.value = valorActual;
+        if (valorActual && estatusTablaLista.includes(valorActual)) {
+            estatusSelect.value = valorActual;
+        }
     }
     
-    // 4. Refrescar select de Estatus Tabla en FILTROS
-    const filterEstatus = document.getElementById('filterEstatus');
-    if (filterEstatus) {
-        const valorActual = filterEstatus.value;
-        filterEstatus.innerHTML = '<option value="">Todos los Estatus</option>';
-        estatusTablaLista.forEach(opt => {
+    // 3. Estatus EPA
+    const estatusEpaSelect = document.getElementById('estatusEpa');
+    if (estatusEpaSelect) {
+        const valorActual = estatusEpaSelect.value;
+        estatusEpaSelect.innerHTML = '<option value="">Seleccionar</option>';
+        estatusEpaLista.forEach(opt => {
             const option = document.createElement('option');
             option.value = opt;
             option.textContent = opt;
-            filterEstatus.appendChild(option);
+            estatusEpaSelect.appendChild(option);
         });
-        if (valorActual) filterEstatus.value = valorActual;
+        if (valorActual && estatusEpaLista.includes(valorActual)) {
+            estatusEpaSelect.value = valorActual;
+        }
     }
     
-    // 5. Refrescar médicos según especialidad seleccionada
-    const espActual = document.getElementById('especialidad')?.value;
-    if (espActual && medicosPorEspecialidad[espActual]) {
-        filterMedicos();
+    // 4. Anestesiólogo
+    const anestesiologoSelect = document.getElementById('anestesiologo');
+    if (anestesiologoSelect) {
+        const valorActual = anestesiologoSelect.value;
+        anestesiologoSelect.innerHTML = '<option value="">Seleccionar Anestesiólogo</option>';
+        anestesiologosLista.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt;
+            option.textContent = opt;
+            anestesiologoSelect.appendChild(option);
+        });
+        if (valorActual && anestesiologosLista.includes(valorActual)) {
+            anestesiologoSelect.value = valorActual;
+        }
     }
+    
+    // 5. Comuna
+    const comunaSelect = document.getElementById('comuna');
+    if (comunaSelect) {
+        const valorActual = comunaSelect.value;
+        comunaSelect.innerHTML = '<option value="">Seleccionar Comuna</option>';
+        comunasLista.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt;
+            option.textContent = opt;
+            comunaSelect.appendChild(option);
+        });
+        if (valorActual && comunasLista.includes(valorActual)) {
+            comunaSelect.value = valorActual;
+        }
+    }
+    
+    // 6. Filtros de lista de pacientes
+    cargarFiltrosLista();
 }
 
-// ====================== FUNCIONES DEL PANEL ADMIN ======================
+
+
+// ====================== CARGAR DATOS EN EL PANEL ADMIN ======================
 function cargarDatosEnPanelAdmin() {
     if (currentUserRole !== 'admin') return;
     
-    // Cargar especialidades en el select
+    // 1. Cargar especialidades en el select
     const adminEspSelect = document.getElementById('adminEspSelect');
     if (adminEspSelect) {
         adminEspSelect.innerHTML = '<option value="">Seleccionar Especialidad</option>';
@@ -2633,7 +2684,10 @@ function cargarDatosEnPanelAdmin() {
         });
     }
     
-    // Cargar estatus
+    // 2. Cargar médicos de la especialidad seleccionada
+    adminCargarMedicos();
+    
+    // 3. Cargar Estatus Tabla
     const adminEstatusList = document.getElementById('adminEstatusList');
     if (adminEstatusList) {
         adminEstatusList.innerHTML = '';
@@ -2645,22 +2699,52 @@ function cargarDatosEnPanelAdmin() {
         });
     }
     
-    // Cargar médicos de la especialidad seleccionada (si hay una)
-    adminCargarMedicos();
+    // 4. Cargar Estatus EPA
+    const adminEpaList = document.getElementById('adminEpaList');
+    if (adminEpaList) {
+        adminEpaList.innerHTML = '';
+        estatusEpaLista.forEach(epa => {
+            const opt = document.createElement('option');
+            opt.value = epa;
+            opt.textContent = epa;
+            adminEpaList.appendChild(opt);
+        });
+    }
+    
+    // 5. Cargar Anestesiólogos
+    const adminAnestList = document.getElementById('adminAnestesiologosList');
+    if (adminAnestList) {
+        adminAnestList.innerHTML = '';
+        anestesiologosLista.forEach(anest => {
+            const opt = document.createElement('option');
+            opt.value = anest;
+            opt.textContent = anest;
+            adminAnestList.appendChild(opt);
+        });
+    }
+    
+    // 6. Cargar Comunas
+    const adminComunasList = document.getElementById('adminComunasList');
+    if (adminComunasList) {
+        adminComunasList.innerHTML = '';
+        comunasLista.forEach(comuna => {
+            const opt = document.createElement('option');
+            opt.value = comuna;
+            opt.textContent = comuna;
+            adminComunasList.appendChild(opt);
+        });
+    }
 }
-
 function adminCargarMedicos() {
     const esp = document.getElementById('adminEspSelect').value;
     const adminMedicosList = document.getElementById('adminMedicosList');
     if (!adminMedicosList) return;
     
-    // Si no hay especialidad seleccionada, limpiar la lista
     if (!esp) {
         adminMedicosList.innerHTML = '<option value="">-- Selecciona una especialidad primero --</option>';
         return;
     }
     
-    // Cargar los médicos de la especialidad seleccionada
     adminMedicosList.innerHTML = '';
     const medicos = medicosPorEspecialidad[esp] || [];
     
@@ -2764,19 +2848,20 @@ async function adminEliminarEstatus() {
 }
 
 async function adminRestablecerDefault() {
-    if (!confirm("⚠️ ¿Restablecer todos los valores por defecto?\nEsto eliminará todas las especialidades, médicos y estatus que hayas agregado.")) return;
+    if (!confirm("⚠️ ¿Restablecer todos los valores por defecto?\nEsto eliminará todas las especialidades, médicos, estatus, anestesiólogos y comunas que hayas agregado.")) return;
     
-    // Valores por defecto
     especialidadesLista = Object.keys(especialistas);
     medicosPorEspecialidad = JSON.parse(JSON.stringify(especialistas));
     estatusTablaLista = ['PROGRAMABLE','PENDIENTE EPA','NO PROGRAMABLE','ACTUALIZAR','CARTA CERTIFICADA','OPERADO','EGRESO','TRASLADO INTERNO','RECHAZO','EXCEPTUADO TRANSITORIO','EXCEPTUADO POR RECHAZO','EXCEPTUADO INUBICABLE'];
+    estatusEpaLista = ['PENDIENTE', 'AGENDADO', 'REALIZADO', 'NO APLICA'];
+    anestesiologosLista = ['DR. DANILO NAVA', 'DR. PEDRO GOLES', 'DRA. MARIANGEL YANES', 'DRA. RAQUEL VALERO', 'DRA. MARINELA RICCOBONO', 'DR. ROBERTO OROZCO', 'DR. DANIEL RIQUELME', 'DR. ANGEL MONTIEL'];
+    comunasLista = ['ILLAPEL', 'CANELA', 'LOS VILOS', 'SALAMANCA'];
     
     await guardarConfiguracionFiltros();
     refrescarTodosLosSelectsFiltros();
     cargarDatosEnPanelAdmin();
     alert("✅ Valores restablecidos a los originales");
 }
-
 
 // ====================== EVENTOS DEL PANEL ADMIN ======================
 document.getElementById('adminEspSelect')?.addEventListener('change', function() {
@@ -3035,4 +3120,103 @@ async function enviarCorreoRestablecimiento(email) {
         console.error(error);
         alert("❌ Error al enviar correo: " + error.message);
     }
+}
+
+
+
+
+// ====================== GESTIÓN DE ESTATUS EPA ======================
+async function adminAgregarEpa() {
+    const nuevoEpa = document.getElementById('adminNuevoEpa').value.trim().toUpperCase();
+    if (!nuevoEpa) { alert("Ingresa un nuevo estatus EPA"); return; }
+    if (estatusEpaLista.includes(nuevoEpa)) { alert("Este estatus EPA ya existe"); return; }
+    
+    estatusEpaLista.push(nuevoEpa);
+    estatusEpaLista.sort();
+    
+    await guardarConfiguracionFiltros();
+    refrescarTodosLosSelectsFiltros();
+    cargarDatosEnPanelAdmin();
+    document.getElementById('adminNuevoEpa').value = '';
+    alert(`✅ Estatus EPA "${nuevoEpa}" agregado`);
+}
+
+async function adminEliminarEpa() {
+    const adminEpaList = document.getElementById('adminEpaList');
+    const epaSeleccionado = adminEpaList?.value;
+    
+    if (!epaSeleccionado) { alert("Selecciona un estatus EPA para eliminar"); return; }
+    if (!confirm(`¿Eliminar "${epaSeleccionado}"?`)) return;
+    
+    const index = estatusEpaLista.indexOf(epaSeleccionado);
+    if (index !== -1) estatusEpaLista.splice(index, 1);
+    
+    await guardarConfiguracionFiltros();
+    refrescarTodosLosSelectsFiltros();
+    cargarDatosEnPanelAdmin();
+    alert(`✅ Estatus EPA "${epaSeleccionado}" eliminado`);
+}
+
+// ====================== GESTIÓN DE ANESTESIÓLOGOS ======================
+async function adminAgregarAnestesiologo() {
+    const nuevoAnest = document.getElementById('adminNuevoAnestesiologo').value.trim().toUpperCase();
+    if (!nuevoAnest) { alert("Ingresa un nuevo anestesiólogo"); return; }
+    if (anestesiologosLista.includes(nuevoAnest)) { alert("Este anestesiólogo ya existe"); return; }
+    
+    anestesiologosLista.push(nuevoAnest);
+    anestesiologosLista.sort();
+    
+    await guardarConfiguracionFiltros();
+    refrescarTodosLosSelectsFiltros();
+    cargarDatosEnPanelAdmin();
+    document.getElementById('adminNuevoAnestesiologo').value = '';
+    alert(`✅ Anestesiólogo "${nuevoAnest}" agregado`);
+}
+
+async function adminEliminarAnestesiologo() {
+    const adminAnestList = document.getElementById('adminAnestesiologosList');
+    const anestSeleccionado = adminAnestList?.value;
+    
+    if (!anestSeleccionado) { alert("Selecciona un anestesiólogo para eliminar"); return; }
+    if (!confirm(`¿Eliminar "${anestSeleccionado}"?`)) return;
+    
+    const index = anestesiologosLista.indexOf(anestSeleccionado);
+    if (index !== -1) anestesiologosLista.splice(index, 1);
+    
+    await guardarConfiguracionFiltros();
+    refrescarTodosLosSelectsFiltros();
+    cargarDatosEnPanelAdmin();
+    alert(`✅ Anestesiólogo "${anestSeleccionado}" eliminado`);
+}
+
+// ====================== GESTIÓN DE COMUNAS ======================
+async function adminAgregarComuna() {
+    const nuevaComuna = document.getElementById('adminNuevaComuna').value.trim().toUpperCase();
+    if (!nuevaComuna) { alert("Ingresa una nueva comuna"); return; }
+    if (comunasLista.includes(nuevaComuna)) { alert("Esta comuna ya existe"); return; }
+    
+    comunasLista.push(nuevaComuna);
+    comunasLista.sort();
+    
+    await guardarConfiguracionFiltros();
+    refrescarTodosLosSelectsFiltros();
+    cargarDatosEnPanelAdmin();
+    document.getElementById('adminNuevaComuna').value = '';
+    alert(`✅ Comuna "${nuevaComuna}" agregada`);
+}
+
+async function adminEliminarComuna() {
+    const adminComunasList = document.getElementById('adminComunasList');
+    const comunaSeleccionada = adminComunasList?.value;
+    
+    if (!comunaSeleccionada) { alert("Selecciona una comuna para eliminar"); return; }
+    if (!confirm(`¿Eliminar "${comunaSeleccionada}"?`)) return;
+    
+    const index = comunasLista.indexOf(comunaSeleccionada);
+    if (index !== -1) comunasLista.splice(index, 1);
+    
+    await guardarConfiguracionFiltros();
+    refrescarTodosLosSelectsFiltros();
+    cargarDatosEnPanelAdmin();
+    alert(`✅ Comuna "${comunaSeleccionada}" eliminada`);
 }
