@@ -524,7 +524,7 @@ let estatusChartInstance = null;
 
 
 // ====================== ACTUALIZAR DASHBOARD - TOTAL GESTIONABLES ======================
-// ====================== ACTUALIZAR DASHBOARD COMPLETO ======================
+
 function updateDashboard() {
     // Aplicar filtro de especialidad si existe
     let pacientesFiltrados = patients;
@@ -532,68 +532,93 @@ function updateDashboard() {
         pacientesFiltrados = patients.filter(p => p.especialidad === dashboardFiltroEspecialidad);
     }
     
-    // 1. Total de pacientes gestionables
+    // Definición de pacientes NO gestionables
     const noGestionables = ["EGRESO", "RECHAZO", "TRASLADO INTERNO", "OPERADO", "egreso", "rechazo", "traslado interno", "operado"];
-    const totalGestionables = pacientesFiltrados.filter(p => {
+    
+    // Filtrar SOLO pacientes gestionables para la mayoría de métricas
+    const pacientesGestionables = pacientesFiltrados.filter(p => {
         if (!p.estatusTabla) return true;
         const estatus = p.estatusTabla.toString().trim().toUpperCase();
         return !noGestionables.includes(estatus);
-    }).length;
+    });
+    
+    // 1. Total de pacientes gestionables
+    const totalGestionables = pacientesGestionables.length;
     document.getElementById('totalPatients').textContent = totalGestionables;
     
-    // 2. Medianas de espera
-    const tiemposEspera = pacientesFiltrados.map(p => calculateWaitingDays(p.fechaIndQx)).filter(t => t > 0);
+    // 2. Medianas de espera (solo gestionables)
+    const tiemposEspera = pacientesGestionables.map(p => calculateWaitingDays(p.fechaIndQx)).filter(t => t > 0);
     const medianaGeneral = calcularMediana(tiemposEspera);
     document.getElementById('medianaEsperaGeneral').innerHTML = `${medianaGeneral} <span style="font-size: 0.9rem;">días</span>`;
     
-    const tiemposEsperaProgram = pacientesFiltrados.map(p => calculateWaitingDays(p.fechaEstatusProgram)).filter(t => t > 0);
+    const tiemposEsperaProgram = pacientesGestionables.map(p => calculateWaitingDays(p.fechaEstatusProgram)).filter(t => t > 0);
     const medianaProgramacion = calcularMediana(tiemposEsperaProgram);
     document.getElementById('medianaEsperaProgramacion').innerHTML = `${medianaProgramacion} <span style="font-size: 0.9rem;">días</span>`;
     
-    // 3. Prioridades
-    const p1 = pacientesFiltrados.filter(p => p.prioridad === 'P1').length;
-    const p2 = pacientesFiltrados.filter(p => p.prioridad === 'P2').length;
-    const p3 = pacientesFiltrados.filter(p => p.prioridad === 'P3').length;
+    // 3. Prioridades (solo gestionables)
+    const p1 = pacientesGestionables.filter(p => p.prioridad === 'P1').length;
+    const p2 = pacientesGestionables.filter(p => p.prioridad === 'P2').length;
+    const p3 = pacientesGestionables.filter(p => p.prioridad === 'P3').length;
     document.getElementById('prioridadP1').textContent = p1;
     document.getElementById('prioridadP2').textContent = p2;
     document.getElementById('prioridadP3').textContent = p3;
     
-    // 4. GES
-    const gesSi = pacientesFiltrados.filter(p => p.ges === 'SI').length;
-    const gesNo = pacientesFiltrados.filter(p => p.ges === 'NO').length;
+    // 4. GES (solo gestionables)
+    const gesSi = pacientesGestionables.filter(p => p.ges === 'SI').length;
+    const gesNo = pacientesGestionables.filter(p => p.ges === 'NO').length;
     document.getElementById('gesSi').textContent = gesSi;
     document.getElementById('gesNo').textContent = gesNo;
     
-    // 5. Datos para gráficos
+    // 5. Datos para gráficos (solo gestionables)
     const porEspecialidad = {};
     const porEstatus = {};
-    const crossData = {};
     
-    pacientesFiltrados.forEach(p => {
+    pacientesGestionables.forEach(p => {
         const esp = p.especialidad || 'Sin Especialidad';
         const est = p.estatusTabla || 'Sin Estatus';
         porEspecialidad[esp] = (porEspecialidad[esp] || 0) + 1;
         porEstatus[est] = (porEstatus[est] || 0) + 1;
+    });
+    
+    // 6. Gráficos (solo gestionables)
+    renderEspecialidadChart(porEspecialidad);
+    renderEstatusChart(porEstatus);
+    
+    // 7. Tabla cruzada (TODOS los pacientes - incluye NO gestionables)
+    const crossData = {};
+    pacientesFiltrados.forEach(p => {
+        const esp = p.especialidad || 'Sin Especialidad';
+        const est = p.estatusTabla || 'Sin Estatus';
         if (!crossData[esp]) crossData[esp] = {};
         crossData[esp][est] = (crossData[esp][est] || 0) + 1;
     });
     
-    // 6. Gráficos
-    renderEspecialidadChart(porEspecialidad);
-    renderEstatusChart(porEstatus);
-    renderCrossTable(crossData, porEspecialidad, porEstatus);
+    // Calcular porEstatus para la tabla cruzada (usando todos los pacientes)
+    const porEstatusCompleto = {};
+    pacientesFiltrados.forEach(p => {
+        const est = p.estatusTabla || 'Sin Estatus';
+        porEstatusCompleto[est] = (porEstatusCompleto[est] || 0) + 1;
+    });
     
-    // 7. Tabla de medianas por especialidad
-    renderMedianasPorEspecialidad(pacientesFiltrados);
+    const porEspecialidadCompleto = {};
+    pacientesFiltrados.forEach(p => {
+        const esp = p.especialidad || 'Sin Especialidad';
+        porEspecialidadCompleto[esp] = (porEspecialidadCompleto[esp] || 0) + 1;
+    });
     
-    // 8. Top pacientes con mayor espera
-    renderTopEspera(pacientesFiltrados);
+    renderCrossTable(crossData, porEspecialidadCompleto, porEstatusCompleto);
     
-    // 9. Últimos pacientes registrados
-    renderUltimosPacientes(pacientesFiltrados);
+    // 8. Tabla de medianas por especialidad (solo gestionables)
+    renderMedianasPorEspecialidad(pacientesGestionables);
     
-    // 10. Gráfico de tendencia mensual
-    renderTendenciaMensual(pacientesFiltrados);
+    // 9. Top pacientes con mayor espera (solo gestionables)
+    renderTopEspera(pacientesGestionables);
+    
+    // 10. Últimos pacientes registrados (solo gestionables)
+    renderUltimosPacientes(pacientesGestionables);
+    
+    // 11. Gráfico de tendencia mensual (solo gestionables)
+    renderTendenciaMensual(pacientesGestionables);
 }
 
 // ====================== GRÁFICO POR ESPECIALIDAD ======================
