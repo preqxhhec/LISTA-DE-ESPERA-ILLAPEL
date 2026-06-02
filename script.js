@@ -746,26 +746,40 @@ function showPatientModal(key) {
     const fechaEstatusProgFmt = formatDate(currentModalPatient.fechaEstatusProgram);
     const fechaCirugiaFmt   = formatDate(currentModalPatient.fechaCirugia);
 
-    // Historial
-    let historialHTML = '';
-    if (currentModalPatient.historial) {
-        const historialArray = Object.values(currentModalPatient.historial)
-            .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+// Historial con opción de eliminar (solo para admin)
+let historialHTML = '';
+if (currentModalPatient.historial) {
+    const historialArray = Object.values(currentModalPatient.historial)
+        .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
 
-        historialHTML = `<h3 style="color:#1e40af; margin:30px 0 18px 0; font-size:1.3rem;">📜 Historial de Modificaciones</h3>`;
+    historialHTML = `<h3 style="color:#1e40af; margin:30px 0 18px 0; font-size:1.3rem;">📜 Historial de Modificaciones</h3>`;
 
-        historialArray.forEach(h => {
-            const fecha = new Date(h.fecha);
-            let cambiosHTML = h.cambios ? `<ul style="margin:10px 0 0 22px;">${h.cambios.map(c => `<li>${c}</li>`).join('')}</ul>` : '';
-            
-            historialHTML += `
-                <div style="margin-bottom:20px; padding:16px; background:#f8fafc; border-radius:10px; border-left:6px solid #3b82f6;">
-                    <strong>${h.accion}</strong> — ${fecha.toLocaleDateString('es-CL')} ${fecha.toLocaleTimeString('es-CL')}
-                    <br><small style="color:#64748b;">Usuario: ${h.usuario}</small>
-                    ${cambiosHTML}
-                </div>`;
-        });
-    }
+    historialArray.forEach((h, index) => {
+        const fecha = new Date(h.fecha);
+        let cambiosHTML = h.cambios ? `<ul style="margin:10px 0 0 22px;">${h.cambios.map(c => `<li>${c}</li>`).join('')}</ul>` : '';
+        
+        // Obtener la clave (key) del historial
+        const historialKey = Object.keys(currentModalPatient.historial).sort((a, b) => 
+            new Date(currentModalPatient.historial[b].fecha) - new Date(currentModalPatient.historial[a].fecha)
+        )[index];
+        
+        // Mostrar botón de eliminar SOLO si es administrador
+        const botonEliminar = (currentUserRole === 'admin') ? `
+            <button onclick="eliminarRegistroHistorial('${currentModalPatient.firebaseKey}', '${historialKey}')" 
+                    style="background:#ef4444; color:white; border:none; padding:4px 10px; border-radius:5px; margin-top:10px; cursor:pointer; font-size:0.75rem;">
+                🗑️ Eliminar este registro
+            </button>
+        ` : '';
+        
+        historialHTML += `
+            <div id="historial-${historialKey}" style="margin-bottom:20px; padding:16px; background:#f8fafc; border-radius:10px; border-left:6px solid #3b82f6; position:relative;">
+                <strong>${h.accion}</strong> — ${fecha.toLocaleDateString('es-CL')} ${fecha.toLocaleTimeString('es-CL')}
+                <br><small style="color:#64748b;">Usuario: ${h.usuario}</small>
+                ${cambiosHTML}
+                ${botonEliminar}
+            </div>`;
+    });
+}
 
     let html = `
         <h2 style="margin:0 0 30px 0; color:#1e40af; text-align:center; font-size:1.7rem;">
@@ -3246,6 +3260,7 @@ async function adminEliminarComuna() {
     alert(`✅ Comuna "${comunaSeleccionada}" eliminada`);
 }
 
+
 // ====================== IMPRIMIR LISTA DE PACIENTES FILTRADA ======================
 function printPatientList() {
     // Obtener los pacientes filtrados actualmente
@@ -3444,4 +3459,404 @@ function printPatientList() {
     printWindow.document.write(tablaHTML);
     printWindow.document.close();
     setTimeout(() => printWindow.print(), 500);
+}
+
+// ====================== ELIMINAR REGISTRO DEL HISTORIAL (SOLO ADMIN) ======================
+async function eliminarRegistroHistorial(patientKey, historialKey) {
+    // Verificar permisos de administrador
+    if (currentUserRole !== 'admin') {
+        alert("❌ No tienes permisos para eliminar registros del historial.");
+        return;
+    }
+    
+    if (!confirm("⚠️ ¿Estás seguro de eliminar este registro del historial?\n\nEsta acción es irreversible.")) {
+        return;
+    }
+    
+    try {
+        // Eliminar el registro específico del historial
+        await db.ref(`patients/${patientKey}/historial/${historialKey}`).remove();
+        
+        // Agregar un nuevo registro al historial indicando la eliminación
+        await db.ref(`patients/${patientKey}/historial`).push({
+            fecha: new Date().toISOString(),
+            usuario: currentUser ? currentUser.email : 'Sistema',
+            accion: "Eliminación de registro",
+            descripcion: `Se eliminó un registro del historial (${historialKey})`
+        });
+        
+        alert("✅ Registro del historial eliminado correctamente.");
+        
+        // Recargar el modal para mostrar el historial actualizado
+        showPatientModal(patientKey);
+        
+    } catch (error) {
+        console.error("Error al eliminar registro:", error);
+        alert("❌ Error al eliminar: " + error.message);
+    }
+}
+
+// ====================== ACTUALIZAR CAMPO EN TODOS LOS PACIENTES ======================
+async function actualizarCampoEnPacientes(campo, valorAntiguo, valorNuevo) {
+    if (valorAntiguo === valorNuevo) return false;
+    
+    let actualizados = 0;
+    const snapshot = await db.ref('patients').once('value');
+    
+    const updates = {};
+    snapshot.forEach((child) => {
+        const patient = child.val();
+        const key = child.key;
+        
+        if (patient[campo] === valorAntiguo) {
+            updates[`patients/${key}/${campo}`] = valorNuevo;
+            actualizados++;
+        }
+    });
+    
+    if (actualizados > 0) {
+        await db.ref().update(updates);
+    }
+    
+    return actualizados;
+}
+
+
+
+async function adminEditarEspecialidad() {
+    const selectEsp = document.getElementById('adminEspSelect');
+    const espAntigua = selectEsp.value;
+    const espNueva = document.getElementById('adminNuevaEspecialidad').value.trim().toUpperCase();
+    
+    if (!espAntigua) {
+        alert("❌ Selecciona una especialidad para editar");
+        return;
+    }
+    if (!espNueva) {
+        alert("❌ Ingresa el nuevo nombre de la especialidad");
+        return;
+    }
+    if (espAntigua === espNueva) {
+        alert("⚠️ El nombre es el mismo. No se realizaron cambios.");
+        return;
+    }
+    if (especialidadesLista.includes(espNueva)) {
+        alert("❌ Ya existe una especialidad con ese nombre");
+        return;
+    }
+    
+    if (!confirm(`¿Cambiar especialidad "${espAntigua}" → "${espNueva}"?\n\nEsto actualizará TODOS los pacientes que tengan esta especialidad.`)) {
+        return;
+    }
+    
+    const loading = document.getElementById('loadingModal');
+    if (loading) loading.style.display = 'flex';
+    
+    try {
+        // 1. Actualizar en todos los pacientes
+        const actualizados = await actualizarCampoEnPacientes('especialidad', espAntigua, espNueva);
+        
+        // 2. Actualizar en listas dinámicas
+        const index = especialidadesLista.indexOf(espAntigua);
+        if (index !== -1) especialidadesLista[index] = espNueva;
+        especialidadesLista.sort();
+        
+        // 3. Actualizar médicos asociados
+        if (medicosPorEspecialidad[espNueva]) {
+            medicosPorEspecialidad[espNueva] = medicosPorEspecialidad[espAntigua];
+        } else {
+            medicosPorEspecialidad[espNueva] = medicosPorEspecialidad[espAntigua] || [];
+        }
+        delete medicosPorEspecialidad[espAntigua];
+        
+        // 4. Guardar configuración
+        await guardarConfiguracionFiltros();
+        
+        // 5. Refrescar toda la interfaz
+        refrescarTodosLosSelectsFiltros();
+        cargarDatosEnPanelAdmin();
+        
+        alert(`✅ Especialidad actualizada\n📊 Pacientes afectados: ${actualizados}`);
+        
+    } catch (error) {
+        console.error(error);
+        alert("❌ Error al editar: " + error.message);
+    } finally {
+        if (loading) loading.style.display = 'none';
+        document.getElementById('adminNuevaEspecialidad').value = '';
+    }
+}
+
+
+async function adminEditarMedico() {
+    const esp = document.getElementById('adminEspSelect').value;
+    const selectMedicos = document.getElementById('adminMedicosList');
+    const medicoAntiguo = selectMedicos.value;
+    const medicoNuevo = document.getElementById('adminNuevoMedico').value.trim().toUpperCase();
+    
+    if (!esp) {
+        alert("❌ Selecciona una especialidad primero");
+        return;
+    }
+    if (!medicoAntiguo) {
+        alert("❌ Selecciona un médico para editar");
+        return;
+    }
+    if (!medicoNuevo) {
+        alert("❌ Ingresa el nuevo nombre del médico");
+        return;
+    }
+    if (medicoAntiguo === medicoNuevo) {
+        alert("⚠️ El nombre es el mismo. No se realizaron cambios.");
+        return;
+    }
+    if (medicosPorEspecialidad[esp].includes(medicoNuevo)) {
+        alert("❌ Ya existe un médico con ese nombre en esta especialidad");
+        return;
+    }
+    
+    if (!confirm(`¿Cambiar médico "${medicoAntiguo}" → "${medicoNuevo}"?\n\nEsto actualizará TODOS los pacientes que tengan este médico.`)) {
+        return;
+    }
+    
+    const loading = document.getElementById('loadingModal');
+    if (loading) loading.style.display = 'flex';
+    
+    try {
+        // 1. Actualizar en todos los pacientes
+        const actualizados = await actualizarCampoEnPacientes('medicoTratante', medicoAntiguo, medicoNuevo);
+        
+        // 2. Actualizar en lista de médicos
+        const index = medicosPorEspecialidad[esp].indexOf(medicoAntiguo);
+        if (index !== -1) medicosPorEspecialidad[esp][index] = medicoNuevo;
+        medicosPorEspecialidad[esp].sort();
+        
+        // 3. Guardar configuración
+        await guardarConfiguracionFiltros();
+        
+        // 4. Refrescar
+        refrescarTodosLosSelectsFiltros();
+        adminCargarMedicos();
+        
+        alert(`✅ Médico actualizado\n📊 Pacientes afectados: ${actualizados}`);
+        
+    } catch (error) {
+        console.error(error);
+        alert("❌ Error al editar: " + error.message);
+    } finally {
+        if (loading) loading.style.display = 'none';
+        document.getElementById('adminNuevoMedico').value = '';
+    }
+}
+
+
+async function adminEditarEstatus() {
+    const selectEstatus = document.getElementById('adminEstatusList');
+    const estatusAntiguo = selectEstatus.value;
+    const estatusNuevo = document.getElementById('adminNuevoEstatus').value.trim().toUpperCase();
+    
+    if (!estatusAntiguo) {
+        alert("❌ Selecciona un estatus para editar");
+        return;
+    }
+    if (!estatusNuevo) {
+        alert("❌ Ingresa el nuevo nombre del estatus");
+        return;
+    }
+    if (estatusAntiguo === estatusNuevo) {
+        alert("⚠️ El nombre es el mismo. No se realizaron cambios.");
+        return;
+    }
+    if (estatusTablaLista.includes(estatusNuevo)) {
+        alert("❌ Ya existe un estatus con ese nombre");
+        return;
+    }
+    
+    if (!confirm(`¿Cambiar estatus "${estatusAntiguo}" → "${estatusNuevo}"?\n\nEsto actualizará TODOS los pacientes con este estatus.`)) {
+        return;
+    }
+    
+    const loading = document.getElementById('loadingModal');
+    if (loading) loading.style.display = 'flex';
+    
+    try {
+        // Actualizar en todos los pacientes
+        const actualizados = await actualizarCampoEnPacientes('estatusTabla', estatusAntiguo, estatusNuevo);
+        
+        // Actualizar en lista
+        const index = estatusTablaLista.indexOf(estatusAntiguo);
+        if (index !== -1) estatusTablaLista[index] = estatusNuevo;
+        estatusTablaLista.sort();
+        
+        await guardarConfiguracionFiltros();
+        refrescarTodosLosSelectsFiltros();
+        cargarDatosEnPanelAdmin();
+        
+        alert(`✅ Estatus actualizado\n📊 Pacientes afectados: ${actualizados}`);
+        
+    } catch (error) {
+        console.error(error);
+        alert("❌ Error al editar: " + error.message);
+    } finally {
+        if (loading) loading.style.display = 'none';
+        document.getElementById('adminNuevoEstatus').value = '';
+    }
+}
+
+
+
+async function adminEditarEpa() {
+    const selectEpa = document.getElementById('adminEpaList');
+    const epaAntiguo = selectEpa.value;
+    const epaNuevo = document.getElementById('adminNuevoEpa').value.trim().toUpperCase();
+    
+    if (!epaAntiguo) {
+        alert("❌ Selecciona un estatus EPA para editar");
+        return;
+    }
+    if (!epaNuevo) {
+        alert("❌ Ingresa el nuevo nombre del estatus EPA");
+        return;
+    }
+    if (epaAntiguo === epaNuevo) {
+        alert("⚠️ El nombre es el mismo. No se realizaron cambios.");
+        return;
+    }
+    if (estatusEpaLista.includes(epaNuevo)) {
+        alert("❌ Ya existe un estatus EPA con ese nombre");
+        return;
+    }
+    
+    if (!confirm(`¿Cambiar estatus EPA "${epaAntiguo}" → "${epaNuevo}"?\n\nEsto actualizará TODOS los pacientes con este estatus EPA.`)) {
+        return;
+    }
+    
+    const loading = document.getElementById('loadingModal');
+    if (loading) loading.style.display = 'flex';
+    
+    try {
+        const actualizados = await actualizarCampoEnPacientes('estatusEpa', epaAntiguo, epaNuevo);
+        
+        const index = estatusEpaLista.indexOf(epaAntiguo);
+        if (index !== -1) estatusEpaLista[index] = epaNuevo;
+        estatusEpaLista.sort();
+        
+        await guardarConfiguracionFiltros();
+        refrescarTodosLosSelectsFiltros();
+        cargarDatosEnPanelAdmin();
+        
+        alert(`✅ Estatus EPA actualizado\n📊 Pacientes afectados: ${actualizados}`);
+        
+    } catch (error) {
+        console.error(error);
+        alert("❌ Error al editar: " + error.message);
+    } finally {
+        if (loading) loading.style.display = 'none';
+        document.getElementById('adminNuevoEpa').value = '';
+    }
+}
+
+
+
+async function adminEditarAnestesiologo() {
+    const selectAnest = document.getElementById('adminAnestesiologosList');
+    const anestAntiguo = selectAnest.value;
+    const anestNuevo = document.getElementById('adminNuevoAnestesiologo').value.trim().toUpperCase();
+    
+    if (!anestAntiguo) {
+        alert("❌ Selecciona un anestesiólogo para editar");
+        return;
+    }
+    if (!anestNuevo) {
+        alert("❌ Ingresa el nuevo nombre del anestesiólogo");
+        return;
+    }
+    if (anestAntiguo === anestNuevo) {
+        alert("⚠️ El nombre es el mismo. No se realizaron cambios.");
+        return;
+    }
+    if (anestesiologosLista.includes(anestNuevo)) {
+        alert("❌ Ya existe un anestesiólogo con ese nombre");
+        return;
+    }
+    
+    if (!confirm(`¿Cambiar anestesiólogo "${anestAntiguo}" → "${anestNuevo}"?\n\nEsto actualizará TODOS los pacientes con este anestesiólogo.`)) {
+        return;
+    }
+    
+    const loading = document.getElementById('loadingModal');
+    if (loading) loading.style.display = 'flex';
+    
+    try {
+        const actualizados = await actualizarCampoEnPacientes('anestesiologo', anestAntiguo, anestNuevo);
+        
+        const index = anestesiologosLista.indexOf(anestAntiguo);
+        if (index !== -1) anestesiologosLista[index] = anestNuevo;
+        anestesiologosLista.sort();
+        
+        await guardarConfiguracionFiltros();
+        refrescarTodosLosSelectsFiltros();
+        cargarDatosEnPanelAdmin();
+        
+        alert(`✅ Anestesiólogo actualizado\n📊 Pacientes afectados: ${actualizados}`);
+        
+    } catch (error) {
+        console.error(error);
+        alert("❌ Error al editar: " + error.message);
+    } finally {
+        if (loading) loading.style.display = 'none';
+        document.getElementById('adminNuevoAnestesiologo').value = '';
+    }
+}
+
+
+async function adminEditarComuna() {
+    const selectComuna = document.getElementById('adminComunasList');
+    const comunaAntigua = selectComuna.value;
+    const comunaNueva = document.getElementById('adminNuevaComuna').value.trim().toUpperCase();
+    
+    if (!comunaAntigua) {
+        alert("❌ Selecciona una comuna para editar");
+        return;
+    }
+    if (!comunaNueva) {
+        alert("❌ Ingresa el nuevo nombre de la comuna");
+        return;
+    }
+    if (comunaAntigua === comunaNueva) {
+        alert("⚠️ El nombre es el mismo. No se realizaron cambios.");
+        return;
+    }
+    if (comunasLista.includes(comunaNueva)) {
+        alert("❌ Ya existe una comuna con ese nombre");
+        return;
+    }
+    
+    if (!confirm(`¿Cambiar comuna "${comunaAntigua}" → "${comunaNueva}"?\n\nEsto actualizará TODOS los pacientes con esta comuna.`)) {
+        return;
+    }
+    
+    const loading = document.getElementById('loadingModal');
+    if (loading) loading.style.display = 'flex';
+    
+    try {
+        const actualizados = await actualizarCampoEnPacientes('comuna', comunaAntigua, comunaNueva);
+        
+        const index = comunasLista.indexOf(comunaAntigua);
+        if (index !== -1) comunasLista[index] = comunaNueva;
+        comunasLista.sort();
+        
+        await guardarConfiguracionFiltros();
+        refrescarTodosLosSelectsFiltros();
+        cargarDatosEnPanelAdmin();
+        
+        alert(`✅ Comuna actualizada\n📊 Pacientes afectados: ${actualizados}`);
+        
+    } catch (error) {
+        console.error(error);
+        alert("❌ Error al editar: " + error.message);
+    } finally {
+        if (loading) loading.style.display = 'none';
+        document.getElementById('adminNuevaComuna').value = '';
+    }
 }
