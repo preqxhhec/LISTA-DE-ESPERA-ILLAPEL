@@ -3245,3 +3245,203 @@ async function adminEliminarComuna() {
     cargarDatosEnPanelAdmin();
     alert(`✅ Comuna "${comunaSeleccionada}" eliminada`);
 }
+
+// ====================== IMPRIMIR LISTA DE PACIENTES FILTRADA ======================
+function printPatientList() {
+    // Obtener los pacientes filtrados actualmente
+    const busqueda = (document.getElementById('busquedaGeneral')?.value || '').toLowerCase().trim();
+    const especialidad = document.getElementById('filterEspecialidad').value;
+    const medico = document.getElementById('filterMedico').value;
+    const estatus = document.getElementById('filterEstatus').value;
+    const comuna = document.getElementById('filterComuna')?.value || '';
+    const fechaDesde = document.getElementById('filterFechaDesde').value;
+    const fechaHasta = document.getElementById('filterFechaHasta').value;
+
+    let filtered = patients.filter(p => {
+        let pasa = true;
+
+        if (busqueda) {
+            const texto = `${p.nombreApellido || ''} ${p.rut || ''} ${p.diagnostico || ''} ${p.intervencion || ''} ${p.especialidad || ''} ${p.medicoTratante || ''}`.toLowerCase();
+            if (!texto.includes(busqueda)) pasa = false;
+        }
+        if (especialidad && p.especialidad !== especialidad) pasa = false;
+        if (medico && p.medicoTratante !== medico) pasa = false;
+        if (estatus && p.estatusTabla !== estatus) pasa = false;
+        if (comuna && p.comuna !== comuna) pasa = false;
+        if (fechaDesde || fechaHasta) {
+            const fechaInd = new Date(p.fechaIndQx || 0);
+            if (fechaDesde && fechaInd < new Date(fechaDesde)) pasa = false;
+            if (fechaHasta && fechaInd > new Date(fechaHasta)) pasa = false;
+        }
+        if (soloSinFolio) {
+            const folio = (p.folio || '').toString().trim();
+            if (folio !== '') pasa = false;
+        }
+        return pasa;
+    });
+
+    // Ordenar por T. Espera (ascendente)
+    filtered.sort((a, b) => calculateWaitingDays(a.fechaIndQx) - calculateWaitingDays(b.fechaIndQx));
+
+    // Generar HTML para impresión
+    const printWindow = window.open('', '_blank');
+    
+    let tablaHTML = `
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+            <meta charset="UTF-8">
+            <title>Lista de Pacientes - Unidad Prequirúrgica</title>
+            <style>
+                * {
+                    margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
+                }
+                body {
+                    font-family: 'Roboto', Arial, sans-serif;
+                    margin: 20px;
+                    font-size: 12px;
+                    line-height: 1.4;
+                    color: #1e2937;
+                }
+                .header {
+                    text-align: center;
+                    margin-bottom: 25px;
+                    border-bottom: 3px solid #1e40af;
+                    padding-bottom: 15px;
+                }
+                .logo {
+                    height: 70px;
+                }
+                h1 {
+                    font-size: 18px;
+                    margin: 5px 0;
+                    color: #1e40af;
+                }
+                h2 {
+                    font-size: 14px;
+                    margin: 3px 0;
+                    color: #334155;
+                }
+                .filters-info {
+                    background: #f8fafc;
+                    padding: 10px;
+                    margin-bottom: 20px;
+                    border-radius: 8px;
+                    font-size: 11px;
+                    border: 1px solid #e2e8f0;
+                }
+                .filters-info p {
+                    margin: 3px 0;
+                }
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-top: 15px;
+                }
+                th, td {
+                    border: 1px solid #94a3b8;
+                    padding: 8px 6px;
+                    text-align: left;
+                    vertical-align: top;
+                }
+                th {
+                    background: #1e40af;
+                    color: white;
+                    font-weight: 600;
+                    font-size: 11px;
+                }
+                td {
+                    font-size: 10px;
+                }
+                tr:nth-child(even) {
+                    background: #f8fafc;
+                }
+                .footer {
+                    margin-top: 30px;
+                    text-align: center;
+                    font-size: 10px;
+                    color: #64748b;
+                    border-top: 1px solid #cbd5e1;
+                    padding-top: 10px;
+                }
+                .total-registros {
+                    margin-top: 15px;
+                    font-weight: bold;
+                    text-align: right;
+                    font-size: 11px;
+                }
+                @media print {
+                    body {
+                        margin: 10px;
+                    }
+                    .no-print {
+                        display: none;
+                    }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <img src="logo.png" alt="Hospital Illapel" class="logo" onerror="this.style.display='none'">
+                <h1>HOSPITAL DE ILLAPEL - UNIDAD DE PREQUIRÚRGICO</h1>
+                <h2>LISTA DE PACIENTES</h2>
+                <p>Fecha de generación: ${new Date().toLocaleDateString('es-CL')} ${new Date().toLocaleTimeString('es-CL')}</p>
+            </div>
+            
+            <div class="filters-info">
+                <p><strong>📋 Filtros aplicados:</strong></p>
+                <p>${busqueda ? `🔍 Búsqueda: ${busqueda} | ` : ''}${especialidad ? `🏥 Especialidad: ${especialidad} | ` : ''}${medico ? `👨‍⚕️ Médico: ${medico} | ` : ''}${estatus ? `📊 Estatus: ${estatus} | ` : ''}${comuna ? `🏠 Comuna: ${comuna} | ` : ''}${fechaDesde ? `📅 Desde: ${fechaDesde} | ` : ''}${fechaHasta ? `📅 Hasta: ${fechaHasta}` : ''}</p>
+                <p>✅ Total de registros encontrados: <strong>${filtered.length}</strong></p>
+            </div>
+            
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Fecha Ind. Qx</th>
+                        <th>Nombre y Apellido</th>
+                        <th>RUT</th>
+                        <th>Diagnóstico</th>
+                        <th>Estatus Tabla</th>
+                        <th>Especialidad</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    // Agregar filas de pacientes
+    filtered.forEach(patient => {
+        tablaHTML += `
+            <tr>
+                <td>${patient.id || '-'}</td>
+                <td>${patient.fechaIndQx ? formatDate(patient.fechaIndQx) : '-'}</td>
+                <td>${patient.nombreApellido || '-'}</td>
+                <td>${patient.rut || '-'}</td>
+                <td>${(patient.diagnostico || '-').substring(0, 50)}${(patient.diagnostico || '').length > 50 ? '...' : ''}</td>
+                <td>${patient.estatusTabla || '-'}</td>
+                <td>${patient.especialidad || '-'}</td>
+            </tr>
+        `;
+    });
+
+    tablaHTML += `
+                </tbody>
+            </table>
+            
+            <div class="total-registros">
+                Total de pacientes: ${filtered.length}
+            </div>
+            
+            <div class="footer">
+                Generado por Sistema Unidad Prequirúrgica - Hospital de Illapel
+            </div>
+        </body>
+        </html>
+    `;
+
+    printWindow.document.write(tablaHTML);
+    printWindow.document.close();
+    setTimeout(() => printWindow.print(), 500);
+}
