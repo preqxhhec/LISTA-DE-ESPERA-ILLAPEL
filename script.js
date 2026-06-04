@@ -242,6 +242,7 @@ document.getElementById('patientForm').addEventListener('submit', async (e) => {
         folio: document.getElementById('folio').value,
         fechaEstatusProgram: document.getElementById('fechaEstatusProgram').value,
         fechaCirugia: document.getElementById('fechaCirugia').value,
+        fechaProximoLlamado: document.getElementById('fechaProximoLlamado').value,
         registro: currentUser ? currentUser.email : 'Sistema',
         timestamp: firebase.database.ServerValue.TIMESTAMP
     };
@@ -345,6 +346,7 @@ function loadPatients() {
 
         renderPatientsTable(patients);
         updateDashboard();
+        actualizarTablaLlamadosPendientes();
         cargarEspecialidadesEnFiltroDashboard();  // ← AGREGAR ESTA LÍNEA
         
         setTimeout(makeTableSortable, 300);
@@ -354,6 +356,7 @@ function loadPatients() {
 
 
 // ====================== VARIABLES GLOBALES DE ORDENAMIENTO ======================
+let currentCallPatient = null;  // Variable específica para llamadas
 let currentSortColumn = null;
 let currentSortOrder = 'asc';
 
@@ -733,8 +736,7 @@ function renderCrossTable(crossData, porEspecialidad, porEstatus) {
 
 //SEGMENTO 5 (Modal, Edición, Reportes y Navegación)
 
-// ====================== MODAL Y ACCIONES ======================
-// ====================== MODAL DETALLE COMPLETO CON TODOS LOS CAMPOS ======================
+
 function showPatientModal(key) {
     currentModalPatient = patients.find(p => p.firebaseKey === key);
     if (!currentModalPatient) return;
@@ -746,40 +748,69 @@ function showPatientModal(key) {
     const fechaEstatusProgFmt = formatDate(currentModalPatient.fechaEstatusProgram);
     const fechaCirugiaFmt   = formatDate(currentModalPatient.fechaCirugia);
 
-// Historial con opción de eliminar (solo para admin)
-let historialHTML = '';
-if (currentModalPatient.historial) {
-    const historialArray = Object.values(currentModalPatient.historial)
-        .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+    // Historial de modificaciones con opción de eliminar (solo admin)
+    let historialHTML = '';
+    if (currentModalPatient.historial) {
+        const historialArray = Object.values(currentModalPatient.historial)
+            .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
 
-    historialHTML = `<h3 style="color:#1e40af; margin:30px 0 18px 0; font-size:1.3rem;">📜 Historial de Modificaciones</h3>`;
+        historialHTML = `<h3 style="color:#1e40af; margin:30px 0 18px 0; font-size:1.3rem;">📜 Historial de Modificaciones</h3>`;
 
-    historialArray.forEach((h, index) => {
-        const fecha = new Date(h.fecha);
-        let cambiosHTML = h.cambios ? `<ul style="margin:10px 0 0 22px;">${h.cambios.map(c => `<li>${c}</li>`).join('')}</ul>` : '';
+        historialArray.forEach((h, index) => {
+            const fecha = new Date(h.fecha);
+            let cambiosHTML = h.cambios ? `<ul style="margin:10px 0 0 22px;">${h.cambios.map(c => `<li>${c}</li>`).join('')}</ul>` : '';
+            
+            const historialKey = Object.keys(currentModalPatient.historial).sort((a, b) => 
+                new Date(currentModalPatient.historial[b].fecha) - new Date(currentModalPatient.historial[a].fecha)
+            )[index];
+            
+            const botonEliminar = (currentUserRole === 'admin') ? `
+                <button onclick="eliminarRegistroHistorial('${currentModalPatient.firebaseKey}', '${historialKey}')" 
+                        style="background:#ef4444; color:white; border:none; padding:4px 10px; border-radius:5px; margin-top:10px; cursor:pointer; font-size:0.75rem;">
+                    🗑️ Eliminar este registro
+                </button>
+            ` : '';
+            
+            historialHTML += `
+                <div style="margin-bottom:20px; padding:16px; background:#f8fafc; border-radius:10px; border-left:6px solid #3b82f6;">
+                    <strong>${h.accion}</strong> — ${fecha.toLocaleDateString('es-CL')} ${fecha.toLocaleTimeString('es-CL')}
+                    <br><small style="color:#64748b;">Usuario: ${h.usuario}</small>
+                    ${cambiosHTML}
+                    ${botonEliminar}
+                </div>`;
+        });
+    }
+
+    // ====================== HISTORIAL DE LLAMADAS ======================
+    let historialLlamadasHTML = '';
+    if (currentModalPatient.historialLlamadas) {
+        const llamadasArray = Object.values(currentModalPatient.historialLlamadas)
+            .sort((a, b) => new Date(b.fechaLlamada) - new Date(a.fechaLlamada));
         
-        // Obtener la clave (key) del historial
-        const historialKey = Object.keys(currentModalPatient.historial).sort((a, b) => 
-            new Date(currentModalPatient.historial[b].fecha) - new Date(currentModalPatient.historial[a].fecha)
-        )[index];
+        const llamadasKeys = Object.keys(currentModalPatient.historialLlamadas).sort((a, b) => 
+            new Date(currentModalPatient.historialLlamadas[b].fechaLlamada) - new Date(currentModalPatient.historialLlamadas[a].fechaLlamada)
+        );
         
-        // Mostrar botón de eliminar SOLO si es administrador
-        const botonEliminar = (currentUserRole === 'admin') ? `
-            <button onclick="eliminarRegistroHistorial('${currentModalPatient.firebaseKey}', '${historialKey}')" 
-                    style="background:#ef4444; color:white; border:none; padding:4px 10px; border-radius:5px; margin-top:10px; cursor:pointer; font-size:0.75rem;">
-                🗑️ Eliminar este registro
-            </button>
-        ` : '';
+        historialLlamadasHTML = `<h3 style="color:#1e40af; margin:30px 0 18px 0; font-size:1.3rem;">📞 Historial de Llamadas</h3>`;
         
-        historialHTML += `
-            <div id="historial-${historialKey}" style="margin-bottom:20px; padding:16px; background:#f8fafc; border-radius:10px; border-left:6px solid #3b82f6; position:relative;">
-                <strong>${h.accion}</strong> — ${fecha.toLocaleDateString('es-CL')} ${fecha.toLocaleTimeString('es-CL')}
-                <br><small style="color:#64748b;">Usuario: ${h.usuario}</small>
-                ${cambiosHTML}
-                ${botonEliminar}
-            </div>`;
-    });
-}
+        llamadasArray.forEach((llamada, idx) => {
+            const fechaLlamada = new Date(llamada.fechaLlamada);
+            const llamadaKey = llamadasKeys[idx];
+            
+            historialLlamadasHTML += `
+                <div style="margin-bottom:15px; padding:15px; background:#f0fdf4; border-radius:10px; border-left:6px solid #10b981; cursor:pointer;" onclick="verDetalleLlamada('${currentModalPatient.firebaseKey}', '${llamadaKey}')">
+                    <strong>📞 Llamada:</strong> ${fechaLlamada.toLocaleDateString('es-CL')} ${fechaLlamada.toLocaleTimeString('es-CL')}<br>
+                    <strong>Motivo:</strong> ${llamada.motivo || '-'}<br>
+                    <strong>Respuesta:</strong> ${llamada.respuesta || '-'}<br>
+                    <strong>Receptor:</strong> ${llamada.nombreRec || '-'}<br>
+                    <small style="color:#64748b;">👆 Click para ver detalles completos</small>
+                </div>
+            `;
+        });
+    } else {
+        historialLlamadasHTML = `<h3 style="color:#1e40af; margin:30px 0 18px 0; font-size:1.3rem;">📞 Historial de Llamadas</h3>
+        <p style="color:#64748b;">No hay registros de llamadas para este paciente.</p>`;
+    }
 
     let html = `
         <h2 style="margin:0 0 30px 0; color:#1e40af; text-align:center; font-size:1.7rem;">
@@ -856,9 +887,8 @@ if (currentModalPatient.historial) {
             <p><strong>Fecha Estatus Program:</strong> ${fechaEstatusProgFmt}</p>
             <p><strong>Fecha de Cirugía:</strong> ${fechaCirugiaFmt}</p>
             <p><strong>Espera Programación:</strong> <strong>${calculateWaitingDays(currentModalPatient.fechaEstatusProgram)} días</strong></p>
+            <p><strong>📞 Próximo Llamado:</strong> ${currentModalPatient.fechaProximoLlamado ? formatDate(currentModalPatient.fechaProximoLlamado) : 'No programado'}</p>
         </div>
-
-        <hr style="margin:35px 0; border:2px solid #e2e8f0;">
 
         <!-- 6. OBSERVACIONES -->
         <h3 style="color:#1e40af; background:#f1f5f9; padding:12px 20px; border-radius:8px; margin-bottom:18px; border-left:6px solid #3b82f6;">
@@ -870,9 +900,17 @@ if (currentModalPatient.historial) {
         <p><strong>Indicaciones Anestesiólogo:</strong><br>${currentModalPatient.indicacionesAnest || 'Sin indicaciones'}</p>
 
         ${historialHTML}
+        ${historialLlamadasHTML}
     `;
 
     document.getElementById('modalBody').innerHTML = html;
+    
+    // ✅ ACTUALIZAR EL BOTÓN DE REGISTRAR LLAMADA CON EL KEY DEL PACIENTE ACTUAL
+    const btnLlamada = document.getElementById('btnRegistrarLlamadaModal');
+    if (btnLlamada) {
+        btnLlamada.setAttribute('onclick', `abrirModalRegistroLlamada('${currentModalPatient.firebaseKey}')`);
+    }
+    
     document.getElementById('patientModal').style.display = 'flex';
 }
 
@@ -924,7 +962,8 @@ function editCurrentPatient() {
         indicacionesAnest: currentModalPatient.indicacionesAnest,
         folio: currentModalPatient.folio,
         fechaEstatusProgram: currentModalPatient.fechaEstatusProgram,
-        fechaCirugia: currentModalPatient.fechaCirugia
+        fechaCirugia: currentModalPatient.fechaCirugia,
+        fechaProximoLlamado: currentModalPatient.fechaProximoLlamado,
     };
 
     // Llenar cada campo
@@ -934,6 +973,10 @@ function editCurrentPatient() {
             elemento.value = campos[key] || '';
         }
     });
+
+console.log("Editando paciente:", currentModalPatient);
+console.log("Fecha próximo llamado:", currentModalPatient.fechaProximoLlamado);
+
 
     // Actualizar médico tratante según especialidad
     if (currentModalPatient.especialidad) {
@@ -3860,3 +3903,434 @@ async function adminEditarComuna() {
         document.getElementById('adminNuevaComuna').value = '';
     }
 }
+
+// ====================== FUNCIONES DE GESTIÓN DE LLAMADAS ======================
+
+// Actualizar tabla de llamados pendientes en el dashboard
+function actualizarTablaLlamadosPendientes() {
+    const tbody = document.getElementById('llamadosPendientesBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    
+    const pendientes = patients.filter(p => {
+        if (!p.fechaProximoLlamado) return false;
+        const fechaLlamado = new Date(p.fechaProximoLlamado);
+        fechaLlamado.setHours(0, 0, 0, 0);
+        return fechaLlamado <= hoy;
+    });
+    
+    pendientes.sort((a, b) => new Date(a.fechaProximoLlamado) - new Date(b.fechaProximoLlamado));
+    
+    if (pendientes.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">No hay pacientes pendientes de llamado</td></tr>';
+        return;
+    }
+    
+    pendientes.forEach(patient => {
+        const fechaProgramada = new Date(patient.fechaProximoLlamado);
+        const diasAviso = Math.ceil((hoy - fechaProgramada) / (1000 * 60 * 60 * 24));
+        
+        // Obtener última observación del historial de llamadas
+        let ultimaObservacion = '-';
+        if (patient.historialLlamadas) {
+            const llamadasArray = Object.values(patient.historialLlamadas)
+                .sort((a, b) => new Date(b.fechaLlamada) - new Date(a.fechaLlamada));
+            if (llamadasArray.length > 0 && llamadasArray[0].observaciones) {
+                ultimaObservacion = llamadasArray[0].observaciones.substring(0, 50);
+                if (llamadasArray[0].observaciones.length > 50) ultimaObservacion += '...';
+            }
+        }
+        
+        const tr = document.createElement('tr');
+        tr.style.backgroundColor = diasAviso > 0 ? '#fee2e2' : '#fef3c7';
+        tr.innerHTML = `
+            <td><strong>${patient.nombreApellido || '-'}</strong></td>
+            <td>${patient.rut || '-'}</td>
+            <td>${patient.nContacto || '-'}</td>
+            <td>${patient.especialidad || '-'}</td>
+            <td>${formatDate(patient.fechaProximoLlamado)}</span></strong></span></span></span></strong></span></span></span></span></span></td>
+            <td><strong style="color: ${diasAviso > 0 ? '#dc2626' : '#d97706'};">${diasAviso > 0 ? `${diasAviso} días atrasado` : 'Hoy'}</strong></td>
+            <td><small>${ultimaObservacion}</small></td>
+            <td>
+                <button onclick="abrirModalRegistroLlamada('${patient.firebaseKey}')" style="background:#10b981; color:white; border:none; padding:6px 12px; border-radius:5px; cursor:pointer;">
+                    📞 Registrar Llamada
+                </button>
+            </span></strong></span></span></span></strong></span></span></span></span></span></td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+// Abrir modal para registrar llamada
+function abrirModalRegistroLlamada(patientKey) {
+    const patient = patients.find(p => p.firebaseKey === patientKey);
+    if (!patient) return;
+    
+    currentModalPatient = patient;
+    
+    // Crear modal si no existe
+    let modal = document.getElementById('modalRegistroLlamada');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modalRegistroLlamada';
+        modal.className = 'modal';
+        modal.style.display = 'none';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 600px;">
+                <span class="close" onclick="cerrarModalRegistroLlamada()">&times;</span>
+                <h2 style="color:#1e40af; margin-bottom:20px;">📞 Registro de Llamada</h2>
+                
+                <div style="background:#f8fafc; padding:15px; border-radius:8px; margin-bottom:20px;">
+                    <p><strong>Paciente:</strong> <span id="llamadaPacienteNombre"></span></p>
+                    <p><strong>RUT:</strong> <span id="llamadaPacienteRut"></span></p>
+                    <p><strong>Teléfono:</strong> <span id="llamadaPacienteContacto"></span></p>
+                </div>
+                
+                <div class="form-group">
+                    <label>📅 Fecha y Hora de la Llamada</label>
+                    <input type="datetime-local" id="llamadaFechaHora" style="width:100%; padding:10px;">
+                </div>
+                
+                <div class="form-group">
+                    <label>👤 Nombre del Receptor</label>
+                    <input type="text" id="llamadaNombreRec" placeholder="Nombre y Apellido" style="width:100%; padding:10px;">
+                </div>
+                
+                <div class="form-group">
+                    <label>🆔 RUT del Receptor</label>
+                    <input type="text" id="llamadaRutRec" placeholder="Sin puntos con guión" style="width:100%; padding:10px;">
+                </div>
+                
+                <div class="form-group">
+                    <label>👨‍👩‍👧 Parentesco con el Paciente</label>
+                    <input type="text" id="llamadaParentesco" placeholder="Ej: Madre, Padre, Hermano, etc." style="width:100%; padding:10px;">
+                </div>
+                
+                <div class="form-group">
+                    <label>📋 Motivo de la Llamada</label>
+                    <select id="llamadaMotivo" style="width:100%; padding:10px;">
+                        <option value="">Seleccionar</option>
+                        <option value="HORA DE EXAMENES">HORA DE EXAMENES</option>
+                        <option value="HORA DE ANESTESIA">HORA DE ANESTESIA</option>
+                        <option value="ACTUALIZACION DE INFORMACION / CONTINUIDAD DEL PROCESO">ACTUALIZACION DE INFORMACION / CONTINUIDAD DEL PROCESO</option>
+                        <option value="FECHA CIRUGIA">FECHA CIRUGIA</option>
+                        <option value="SUSPENDIDO">SUSPENDIDO</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>📝 Respuesta del Paciente/Receptor</label>
+                    <select id="llamadaRespuesta" style="width:100%; padding:10px;">
+                        <option value="">Seleccionar</option>
+                        <option value="ACEPTA">ACEPTA</option>
+                        <option value="RECHAZA">RECHAZA</option>
+                        <option value="POSTERGA">POSTERGA</option>
+                        <option value="NO RESPONDE LLAMADA">NO RESPONDE LLAMADA</option>
+                        <option value="ENTREGARA INFORMACION">ENTREGARA INFORMACION</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>📝 Observaciones</label>
+                    <textarea id="llamadaObservaciones" rows="3" style="width:100%; padding:10px;" placeholder="Detalles específicos de la conversación..."></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label>📅 Programar Próximo Llamado</label>
+                    <input type="date" id="llamadaProximoLlamado" style="width:100%; padding:10px;">
+                    <small style="color:#64748b;">Si se programa una fecha, aparecerá en la lista de pendientes</small>
+                </div>
+                
+                
+                
+                <div class="modal-buttons" style="margin-top:20px;">
+                    <button onclick="guardarRegistroLlamada()" class="btn-primary">💾 Guardar Llamada</button>
+                    <button onclick="cerrarModalRegistroLlamada()" class="btn-secondary">Cancelar</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    
+    // Llenar datos del paciente
+    document.getElementById('llamadaPacienteNombre').textContent = patient.nombreApellido || '-';
+    document.getElementById('llamadaPacienteRut').textContent = patient.rut || '-';
+    document.getElementById('llamadaPacienteContacto').textContent = patient.nContacto || '-';
+    
+    // Fecha actual por defecto
+    const ahora = new Date();
+    const año = ahora.getFullYear();
+    const mes = String(ahora.getMonth() + 1).padStart(2, '0');
+    const dia = String(ahora.getDate()).padStart(2, '0');
+    const horas = String(ahora.getHours()).padStart(2, '0');
+    const minutos = String(ahora.getMinutes()).padStart(2, '0');
+    document.getElementById('llamadaFechaHora').value = `${año}-${mes}-${dia}T${horas}:${minutos}`;
+    
+    // Limpiar campos
+    document.getElementById('llamadaNombreRec').value = '';
+    document.getElementById('llamadaRutRec').value = '';
+    document.getElementById('llamadaParentesco').value = '';
+    document.getElementById('llamadaMotivo').value = '';
+    document.getElementById('llamadaRespuesta').value = '';
+    document.getElementById('llamadaObservaciones').value = '';
+    document.getElementById('llamadaProximoLlamado').value = '';
+   
+    
+    modal.style.display = 'flex';
+}
+
+function cerrarModalRegistroLlamada() {
+    const modal = document.getElementById('modalRegistroLlamada');
+    if (modal) modal.style.display = 'none';
+}
+
+// Guardar registro de llamada
+async function guardarRegistroLlamada() {
+    if (!currentModalPatient) {
+        alert("❌ No hay paciente seleccionado");
+        return;
+    }
+    
+    // ✅ DEFINIR patientKey AQUÍ (antes de usarlo)
+    const patientKey = currentModalPatient.firebaseKey;
+    
+    const llamadaData = {
+        fechaLlamada: document.getElementById('llamadaFechaHora').value,
+        nombreRec: document.getElementById('llamadaNombreRec').value,
+        rutRec: document.getElementById('llamadaRutRec').value,
+        parentesco: document.getElementById('llamadaParentesco').value,
+        motivo: document.getElementById('llamadaMotivo').value,
+        respuesta: document.getElementById('llamadaRespuesta').value,
+        observaciones: document.getElementById('llamadaObservaciones').value,
+        proximoLlamado: document.getElementById('llamadaProximoLlamado').value,
+        registradoPor: currentUser ? currentUser.email : 'Sistema',
+        timestamp: firebase.database.ServerValue.TIMESTAMP
+    };
+    
+    // Validaciones
+    if (!llamadaData.motivo) {
+        alert("❌ Selecciona un motivo de la llamada");
+        return;
+    }
+    if (!llamadaData.respuesta) {
+        alert("❌ Selecciona la respuesta del paciente");
+        return;
+    }
+    
+    const loading = document.getElementById('loadingModal');
+    if (loading) loading.style.display = 'flex';
+    
+    try {
+        // 1. Guardar en historial de llamadas
+        await db.ref(`patients/${patientKey}/historialLlamadas`).push(llamadaData);
+        
+        // 2. Actualizar fecha de próximo llamado en el paciente
+        if (llamadaData.proximoLlamado) {
+            await db.ref(`patients/${patientKey}`).update({
+                fechaProximoLlamado: llamadaData.proximoLlamado
+            });
+        } else {
+            // Si no hay nueva fecha, eliminar la alerta
+            await db.ref(`patients/${patientKey}/fechaProximoLlamado`).remove();
+        }
+        
+        // 3. Registrar en historial general del paciente
+        await db.ref(`patients/${patientKey}/historial`).push({
+            fecha: new Date().toISOString(),
+            usuario: currentUser ? currentUser.email : 'Sistema',
+            accion: "Registro de Llamada",
+            descripcion: `Llamada registrada - Motivo: ${llamadaData.motivo} - Respuesta: ${llamadaData.respuesta}`
+        });
+        
+        alert("✅ Registro de llamada guardado correctamente");
+        cerrarModalRegistroLlamada();
+        
+        // Actualizar paciente y dashboard
+        await loadPatients();
+        
+        // ✅ Reabrir el modal del paciente con los datos actualizados
+        showPatientModal(patientKey);
+        
+    } catch (error) {
+        console.error(error);
+        alert("❌ Error al guardar: " + error.message);
+    } finally {
+        if (loading) loading.style.display = 'none';
+    }
+}
+
+// Ver detalle de llamada en modal
+async function verDetalleLlamada(patientKey, llamadaKey) {
+    const snapshot = await db.ref(`patients/${patientKey}/historialLlamadas/${llamadaKey}`).once('value');
+    const llamada = snapshot.val();
+    
+    if (!llamada) return;
+    
+    let modal = document.getElementById('modalDetalleLlamada');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modalDetalleLlamada';
+        modal.className = 'modal';
+        modal.style.display = 'none';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 500px;">
+                <span class="close" onclick="cerrarModalDetalleLlamada()">&times;</span>
+                <h2 style="color:#1e40af;">📋 Detalle de Llamada</h2>
+                <div id="detalleLlamadaBody" style="margin-top:20px;"></div>
+                <div class="modal-buttons">
+                    <button onclick="cerrarModalDetalleLlamada()" class="btn-secondary">Cerrar</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    
+    const fecha = new Date(llamada.fechaLlamada);
+    const body = document.getElementById('detalleLlamadaBody');
+    body.innerHTML = `
+        <p><strong>📅 Fecha y Hora:</strong> ${fecha.toLocaleDateString('es-CL')} ${fecha.toLocaleTimeString('es-CL')}</p>
+        <p><strong>👤 Receptor:</strong> ${llamada.nombreRec || '-'}</p>
+        <p><strong>🆔 RUT Receptor:</strong> ${llamada.rutRec || '-'}</p>
+        <p><strong>👨‍👩‍👧 Parentesco:</strong> ${llamada.parentesco || '-'}</p>
+        <hr>
+        <p><strong>📋 Motivo:</strong> ${llamada.motivo || '-'}</p>
+        <p><strong>📝 Respuesta:</strong> ${llamada.respuesta || '-'}</p>
+        <p><strong>📝 Observaciones:</strong> ${llamada.observaciones || '-'}</p>
+        <hr>
+        <p><strong>📅 Próximo Llamado:</strong> ${llamada.proximoLlamado ? formatDate(llamada.proximoLlamado) : 'No programado'}</p>
+        <p><strong>👤 Funcionario:</strong> ${llamada.funcionario || '-'}</p>
+        <p><strong>👤 Registrado por:</strong> ${llamada.registradoPor || '-'}</p>
+    `;
+    
+    modal.style.display = 'flex';
+}
+
+function cerrarModalDetalleLlamada() {
+    const modal = document.getElementById('modalDetalleLlamada');
+    if (modal) modal.style.display = 'none';
+}
+
+// Imprimir todas las llamadas realizadas
+async function imprimirTodasLasLlamadas() {
+    const todasLasLlamadas = [];
+    
+    for (const patient of patients) {
+        if (patient.historialLlamadas) {
+            const llamadas = Object.values(patient.historialLlamadas);
+            llamadas.forEach(llamada => {
+                todasLasLlamadas.push({
+                    paciente: patient.nombreApellido,
+                    rut: patient.rut,
+                    telefono: patient.nContacto,
+                    ...llamada
+                });
+            });
+        }
+    }
+    
+    // Ordenar por fecha de llamada (más reciente primero)
+    todasLasLlamadas.sort((a, b) => new Date(b.fechaLlamada) - new Date(a.fechaLlamada));
+    
+    const printWindow = window.open('', '_blank');
+    let tablaHTML = `
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+            <meta charset="UTF-8">
+            <title>Reporte de Llamadas Realizadas</title>
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    margin: 20px;
+                    font-size: 11px;
+                }
+                .header {
+                    text-align: center;
+                    margin-bottom: 25px;
+                    border-bottom: 3px solid #1e40af;
+                    padding-bottom: 15px;
+                }
+                .logo { height: 70px; }
+                h1 { color: #1e40af; font-size: 18px; }
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-top: 15px;
+                }
+                th, td {
+                    border: 1px solid #94a3b8;
+                    padding: 6px 4px;
+                    text-align: left;
+                    vertical-align: top;
+                }
+                th {
+                    background: #1e40af;
+                    color: white;
+                    font-weight: 600;
+                }
+                .footer {
+                    margin-top: 30px;
+                    text-align: center;
+                    font-size: 10px;
+                    color: #64748b;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <img src="logo.png" class="logo" onerror="this.style.display='none'">
+                <h1>HOSPITAL DE ILLAPEL - UNIDAD DE PREQUIRÚRGICO</h1>
+                <h2>REPORTE DE LLAMADAS REALIZADAS</h2>
+                <p>Generado: ${new Date().toLocaleDateString('es-CL')} ${new Date().toLocaleTimeString('es-CL')}</p>
+                <p><strong>Total de llamadas registradas: ${todasLasLlamadas.length}</strong></p>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Fecha Llamada</th>
+                        <th>Paciente</th>
+                        <th>RUT</th>
+                        <th>Teléfono</th>
+                        <th>Receptor</th>
+                        <th>Motivo</th>
+                        <th>Respuesta</th>
+                        <th>Funcionario</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+    
+    todasLasLlamadas.forEach(llamada => {
+        const fecha = new Date(llamada.fechaLlamada);
+        tablaHTML += `
+            <tr>
+                <td>${fecha.toLocaleDateString('es-CL')} ${fecha.toLocaleTimeString('es-CL')}</span></strong></span></span></span></strong></span></span></span></span></span></td>
+                <td>${llamada.paciente || '-'}</span></strong></span></span></span></strong></span></span></span></span></span></td>
+                <td>${llamada.rut || '-'}</span></strong></span></span></span></strong></span></span></span></span></span></td>
+                <td>${llamada.telefono || '-'}</span></strong></span></span></span></strong></span></span></span></span></span></td>
+                <td>${llamada.nombreRec || '-'}</span></strong></span></span></span></strong></span></span></span></span></span></td>
+                <td>${llamada.motivo || '-'}</span></strong></span></span></span></strong></span></span></span></span></span></td>
+                <td>${llamada.respuesta || '-'}</span></strong></span></span></span></strong></span></span></span></span></span></td>
+                <td>${llamada.funcionario || '-'}</span></strong></span></span></span></strong></span></span></span></span></span></td>
+            </tr>
+        `;
+    });
+    
+    tablaHTML += `
+                </tbody>
+            赶
+            <div class="footer">
+                Reporte generado por Sistema Unidad Prequirúrgica - Hospital de Illapel
+            </div>
+        </body>
+        </html>
+    `;
+    
+    printWindow.document.write(tablaHTML);
+    printWindow.document.close();
+    setTimeout(() => printWindow.print(), 500);
+}
+
