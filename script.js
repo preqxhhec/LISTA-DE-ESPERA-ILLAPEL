@@ -3909,23 +3909,48 @@ function actualizarTablaLlamadosPendientes() {
     const hoy = new Date();
     hoy.setHours(0, 0, 0, 0);
     
+    // Calcular fecha límite (hoy + 10 días)
+    const fechaLimite = new Date(hoy);
+    fechaLimite.setDate(hoy.getDate() + 10);
+    fechaLimite.setHours(0, 0, 0, 0);
+    
+    // Filtrar pacientes con fechaProximoLlamado <= fechaLimite
     const pendientes = patients.filter(p => {
         if (!p.fechaProximoLlamado) return false;
         const fechaLlamado = new Date(p.fechaProximoLlamado);
         fechaLlamado.setHours(0, 0, 0, 0);
-        return fechaLlamado <= hoy;
+        return fechaLlamado <= fechaLimite;
     });
     
+    // Ordenar por fecha de próximo llamado (más cercano primero)
     pendientes.sort((a, b) => new Date(a.fechaProximoLlamado) - new Date(b.fechaProximoLlamado));
     
     if (pendientes.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">No hay pacientes pendientes de llamado</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">No hay pacientes pendientes de llamado en los próximos 10 días</td><tr>';
         return;
     }
     
     pendientes.forEach(patient => {
         const fechaProgramada = new Date(patient.fechaProximoLlamado);
-        const diasAviso = Math.ceil((hoy - fechaProgramada) / (1000 * 60 * 60 * 24));
+        const diasDiferencia = Math.ceil((fechaProgramada - hoy) / (1000 * 60 * 60 * 24));
+        
+        let estadoTexto = '';
+        let estadoColor = '';
+        let bgColor = '';
+        
+        if (diasDiferencia < 0) {
+            estadoTexto = `${Math.abs(diasDiferencia)} días atrasado`;
+            estadoColor = '#dc2626';
+            bgColor = '#fee2e2';
+        } else if (diasDiferencia === 0) {
+            estadoTexto = 'Hoy';
+            estadoColor = '#d97706';
+            bgColor = '#fef3c7';
+        } else {
+            estadoTexto = `En ${diasDiferencia} días`;
+            estadoColor = '#059669';
+            bgColor = '#ecfdf5';
+        }
         
         // Obtener última observación del historial de llamadas
         let ultimaObservacion = '-';
@@ -3939,25 +3964,26 @@ function actualizarTablaLlamadosPendientes() {
         }
         
         const tr = document.createElement('tr');
-        tr.style.backgroundColor = diasAviso > 0 ? '#fee2e2' : '#fef3c7';
+        tr.style.backgroundColor = bgColor;
         tr.innerHTML = `
             <td><strong>${patient.nombreApellido || '-'}</strong></td>
             <td>${patient.rut || '-'}</td>
             <td>${patient.nContacto || '-'}</td>
             <td>${patient.especialidad || '-'}</td>
-            <td>${formatDate(patient.fechaProximoLlamado)}</span></strong></span></span></span></strong></span></span></span></span></span></td>
-            <td><strong style="color: ${diasAviso > 0 ? '#dc2626' : '#d97706'};">${diasAviso > 0 ? `${diasAviso} días atrasado` : 'Hoy'}</strong></td>
+            <td><strong>${formatDate(patient.fechaProximoLlamado)}</strong></td>
+            <td><strong style="color: ${estadoColor};">${estadoTexto}</strong></td>
             <td><small>${ultimaObservacion}</small></td>
             <td>
                 <button onclick="abrirModalRegistroLlamada('${patient.firebaseKey}')" style="background:#10b981; color:white; border:none; padding:6px 12px; border-radius:5px; cursor:pointer;">
                     📞 Registrar Llamada
                 </button>
-            </span></strong></span></span></span></strong></span></span></span></span></span></td>
+            </td>
         `;
         tbody.appendChild(tr);
     });
 }
 
+// Abrir modal para registrar llamada
 // Abrir modal para registrar llamada
 function abrirModalRegistroLlamada(patientKey) {
     const patient = patients.find(p => p.firebaseKey === patientKey);
@@ -3973,7 +3999,7 @@ function abrirModalRegistroLlamada(patientKey) {
         modal.className = 'modal';
         modal.style.display = 'none';
         modal.innerHTML = `
-            <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-content" style="max-width: 700px;">
                 <span class="close" onclick="cerrarModalRegistroLlamada()">&times;</span>
                 <h2 style="color:#1e40af; margin-bottom:20px;">📞 Registro de Llamada</h2>
                 
@@ -3981,6 +4007,11 @@ function abrirModalRegistroLlamada(patientKey) {
                     <p><strong>Paciente:</strong> <span id="llamadaPacienteNombre"></span></p>
                     <p><strong>RUT:</strong> <span id="llamadaPacienteRut"></span></p>
                     <p><strong>Teléfono:</strong> <span id="llamadaPacienteContacto"></span></p>
+                    <hr style="margin:10px 0;">
+                    <p><strong>📝 Observaciones Generales:</strong><br>
+                    <span id="llamadaPacienteObservaciones" style="font-size:13px; color:#475569;"></span></p>
+                    <p><strong>💉 Indicaciones Anestesiólogo:</strong><br>
+                    <span id="llamadaPacienteIndicaciones" style="font-size:13px; color:#475569;"></span></p>
                 </div>
                 
                 <div class="form-group">
@@ -4028,7 +4059,7 @@ function abrirModalRegistroLlamada(patientKey) {
                 </div>
                 
                 <div class="form-group">
-                    <label>📝 Observaciones</label>
+                    <label>📝 Observaciones de la Llamada</label>
                     <textarea id="llamadaObservaciones" rows="3" style="width:100%; padding:10px;" placeholder="Detalles específicos de la conversación..."></textarea>
                 </div>
                 
@@ -4037,8 +4068,6 @@ function abrirModalRegistroLlamada(patientKey) {
                     <input type="date" id="llamadaProximoLlamado" style="width:100%; padding:10px;">
                     <small style="color:#64748b;">Si se programa una fecha, aparecerá en la lista de pendientes</small>
                 </div>
-                
-                
                 
                 <div class="modal-buttons" style="margin-top:20px;">
                     <button onclick="guardarRegistroLlamada()" class="btn-primary">💾 Guardar Llamada</button>
@@ -4053,6 +4082,13 @@ function abrirModalRegistroLlamada(patientKey) {
     document.getElementById('llamadaPacienteNombre').textContent = patient.nombreApellido || '-';
     document.getElementById('llamadaPacienteRut').textContent = patient.rut || '-';
     document.getElementById('llamadaPacienteContacto').textContent = patient.nContacto || '-';
+    
+    // AGREGAR OBSERVACIONES E INDICACIONES ANESTESIÓLOGO
+    const observacionesText = patient.observaciones || 'Sin observaciones registradas';
+    const indicacionesText = patient.indicacionesAnest || 'Sin indicaciones registradas';
+    
+    document.getElementById('llamadaPacienteObservaciones').innerHTML = observacionesText;
+    document.getElementById('llamadaPacienteIndicaciones').innerHTML = indicacionesText;
     
     // Fecha actual por defecto
     const ahora = new Date();
@@ -4071,7 +4107,6 @@ function abrirModalRegistroLlamada(patientKey) {
     document.getElementById('llamadaRespuesta').value = '';
     document.getElementById('llamadaObservaciones').value = '';
     document.getElementById('llamadaProximoLlamado').value = '';
-   
     
     modal.style.display = 'flex';
 }
@@ -4328,3 +4363,833 @@ async function imprimirTodasLasLlamadas() {
     setTimeout(() => printWindow.print(), 500);
 }
 
+
+
+
+
+
+
+
+
+
+// ====================== FORMATEAR RUT ======================
+function formatearRutParaBusqueda(rut) {
+    if (!rut) return '';
+    // Limpiar caracteres no deseados
+    let clean = rut.toString().replace(/[^0-9kK]/g, '').toUpperCase();
+    if (clean.length < 7) return '';
+    
+    const dv = clean.slice(-1);
+    let numero = clean.slice(0, -1);
+    // Agregar puntos
+    numero = numero.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    
+    return `${numero}-${dv}`;
+}
+
+// ====================== CONVERTIR FECHA AL FORMATO DE LA APP ======================
+function convertirFechaApp(fechaStr) {
+    if (!fechaStr) return '';
+    
+    // Si ya es ISO string
+    if (typeof fechaStr === 'string' && fechaStr.includes('T')) {
+        return fechaStr;
+    }
+    
+    // Si es número de Excel
+    if (typeof fechaStr === 'number') {
+        const fecha = new Date((fechaStr - 25569) * 86400000);
+        return fecha.toISOString();
+    }
+    
+    // Si es string en formato YYYY-MM-DD
+    if (typeof fechaStr === 'string' && fechaStr.match(/^\d{4}-\d{2}-\d{2}/)) {
+        const fecha = new Date(fechaStr);
+        return fecha.toISOString();
+    }
+    
+    // Si es string en formato DD/MM/YYYY
+    if (typeof fechaStr === 'string' && fechaStr.match(/^\d{2}\/\d{2}\/\d{4}/)) {
+        const partes = fechaStr.split('/');
+        const fecha = new Date(partes[2], partes[1] - 1, partes[0]);
+        return fecha.toISOString();
+    }
+    
+    // Si es string en formato DD-MM-YYYY
+    if (typeof fechaStr === 'string' && fechaStr.match(/^\d{2}-\d{2}-\d{4}/)) {
+        const partes = fechaStr.split('-');
+        const fecha = new Date(partes[2], partes[1] - 1, partes[0]);
+        return fecha.toISOString();
+    }
+    
+    // Intentar con Date directamente
+    const fecha = new Date(fechaStr);
+    if (!isNaN(fecha.getTime())) {
+        return fecha.toISOString();
+    }
+    
+    console.warn(`⚠️ Fecha no reconocida: ${fechaStr}`);
+    return '';
+}
+
+// ====================== MIGRAR LLAMADAS DESDE EXCEL ======================
+async function migrarLlamadasDesdeExcel() {
+    // Verificar permisos de administrador
+    if (currentUserRole !== 'admin') {
+        alert("❌ Solo los administradores pueden migrar llamadas.");
+        return;
+    }
+    
+    // Crear input de archivo
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.xlsx, .xls, .csv';
+    
+    input.onchange = async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        const loading = document.getElementById('loadingModal');
+        if (loading) loading.style.display = 'flex';
+        
+        try {
+            // Leer el archivo Excel
+            const data = await file.arrayBuffer();
+            const workbook = XLSX.read(data);
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(sheet);
+            
+            console.log(`📊 Archivo cargado: ${rows.length} registros en Excel`);
+            
+            // Mostrar nombres de columnas para referencia
+            if (rows.length > 0) {
+                console.log("📋 Columnas encontradas:", Object.keys(rows[0]));
+            }
+            
+            // Obtener todos los pacientes actuales de la app
+            const snapshot = await db.ref('patients').once('value');
+            const pacientesMap = new Map(); // RUT formateado -> firebaseKey
+            const pacientesInfo = new Map(); // RUT formateado -> nombre
+            
+            snapshot.forEach((child) => {
+                const patient = child.val();
+                const firebaseKey = child.key;
+                
+                if (patient.rut) {
+                    const rutFormateado = formatearRutParaBusqueda(patient.rut);
+                    if (rutFormateado) {
+                        pacientesMap.set(rutFormateado, firebaseKey);
+                        pacientesInfo.set(rutFormateado, patient.nombreApellido || 'Desconocido');
+                    }
+                }
+            });
+            
+            console.log(`👥 Pacientes activos en la app: ${pacientesMap.size}`);
+            
+            // Procesar registros
+            const registrosPorPaciente = new Map(); // firebaseKey -> array de llamadas
+            let erroresFecha = 0;
+            let erroresRut = 0;
+            let noEncontrados = 0;
+            
+            for (const row of rows) {
+                // Extraer RUT del paciente (columna: RUT_PACIENTE)
+                let rutExcel = row.RUT_PACIENTE || row.rut_paciente || row.RUT || row.rut || '';
+                
+                if (!rutExcel) {
+                    console.warn(`⚠️ Registro sin RUT_PACIENTE, omitido`);
+                    erroresRut++;
+                    continue;
+                }
+                
+                const rutFormateado = formatearRutParaBusqueda(rutExcel.toString());
+                
+                if (!rutFormateado) {
+                    console.warn(`⚠️ RUT inválido: ${rutExcel}`);
+                    erroresRut++;
+                    continue;
+                }
+                
+                // Verificar si el paciente existe en la app
+                const patientKey = pacientesMap.get(rutFormateado);
+                if (!patientKey) {
+                    console.log(`❌ Paciente no encontrado: ${rutFormateado}`);
+                    noEncontrados++;
+                    continue;
+                }
+                
+                // Extraer fecha (columna: FECHA_LLAMADA) - puede ser número de Excel o string
+                let fechaRaw = row.FECHA_LLAMADA || row.fecha_llamada || row.FECHA || row.fecha || '';
+                
+                if (!fechaRaw) {
+                    console.warn(`⚠️ Registro sin fecha para RUT ${rutFormateado}`);
+                    erroresFecha++;
+                    continue;
+                }
+                
+                // Convertir fecha (soporta número de Excel)
+                const fechaLlamada = convertirFechaApp(fechaRaw);
+                
+                if (!fechaLlamada) {
+                    console.warn(`⚠️ Fecha no convertible: "${fechaRaw}" para RUT ${rutFormateado}`);
+                    erroresFecha++;
+                    continue;
+                }
+                
+                // Extraer demás campos
+                const motivo = row.MOTIVO || row.motivo || row.RAZON || '';
+                const nombreRec = row.RECEPTOR || row.receptor || row.NOMBRE_RECEPTOR || '';
+                const rutRec = row.RUT_RECEPTOR || row.rut_receptor || '';
+                const parentesco = row.PARENTESCO || row.parentesco || '';
+                const observaciones = row.OBSERVACIONES || row.observaciones || '';
+                const respuesta = row.RESPUESTA || row.respuesta || '';
+                const proximoLlamadoRaw = row.PROXIMO_LLAMADO || row.proximo_llamado || '';
+                let proximoLlamado = '';
+                
+                if (proximoLlamadoRaw) {
+                    proximoLlamado = convertirFechaApp(proximoLlamadoRaw);
+                }
+                
+                const llamadaData = {
+                    fechaLlamada: fechaLlamada,
+                    motivo: motivo,
+                    nombreRec: nombreRec,
+                    rutRec: rutRec,
+                    parentesco: parentesco,
+                    observaciones: observaciones,
+                    respuesta: respuesta,
+                    proximoLlamado: proximoLlamado,
+                    registradoPor: currentUser?.email || 'Migración Excel',
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                };
+                
+                // Agrupar por paciente
+                if (!registrosPorPaciente.has(patientKey)) {
+                    registrosPorPaciente.set(patientKey, []);
+                }
+                registrosPorPaciente.get(patientKey).push(llamadaData);
+            }
+            
+            const totalLlamadas = Array.from(registrosPorPaciente.values()).reduce((a, b) => a + b.length, 0);
+            
+            console.log(`\n📊 ESTADÍSTICAS:`);
+            console.log(`   ✅ Registros válidos: ${totalLlamadas}`);
+            console.log(`   👥 Pacientes afectados: ${registrosPorPaciente.size}`);
+            console.log(`   ❌ Pacientes no encontrados: ${noEncontrados}`);
+            console.log(`   ❌ Errores de RUT: ${erroresRut}`);
+            console.log(`   ❌ Errores de fecha: ${erroresFecha}`);
+            
+            if (totalLlamadas === 0) {
+                alert("❌ No hay registros válidos para migrar.\n\nRevisa la consola (F12) para ver los detalles.");
+                if (loading) loading.style.display = 'none';
+                return;
+            }
+            
+            // Confirmar migración
+            if (!confirm(`⚠️ ¿MIGRAR ${totalLlamadas} llamadas a ${registrosPorPaciente.size} pacientes?\n\n❌ Registros ignorados: ${noEncontrados + erroresRut + erroresFecha}\n\n⚠️ Esta acción no se puede deshacer.`)) {
+                if (loading) loading.style.display = 'none';
+                return;
+            }
+            
+            // Migrar llamadas a Firebase
+            let migradas = 0;
+            let errores = 0;
+            
+            for (const [patientKey, llamadas] of registrosPorPaciente) {
+                const nombrePaciente = pacientesInfo.get([...pacientesMap.entries()].find(e => e[1] === patientKey)?.[0]) || 'Desconocido';
+                console.log(`📝 Procesando: ${nombrePaciente} - ${llamadas.length} llamadas`);
+                
+                for (const llamada of llamadas) {
+                    try {
+                        await db.ref(`patients/${patientKey}/historialLlamadas`).push(llamada);
+                        migradas++;
+                        
+                        if (migradas % 100 === 0) {
+                            console.log(`✅ Progreso: ${migradas}/${totalLlamadas} llamadas migradas`);
+                        }
+                    } catch (error) {
+                        errores++;
+                        console.error(`❌ Error al migrar: ${error.message}`);
+                    }
+                }
+            }
+            
+            // Resultado final
+            alert(`✅ MIGRACIÓN COMPLETADA\n\n📞 Llamadas migradas: ${migradas}\n👥 Pacientes afectados: ${registrosPorPaciente.size}\n❌ Errores: ${errores}\n📊 Registros ignorados: ${noEncontrados + erroresRut + erroresFecha}`);
+            
+            // Recargar pacientes y actualizar dashboard
+            loadPatients();
+            
+        } catch (error) {
+            console.error(error);
+            alert("❌ Error al procesar el archivo: " + error.message);
+        } finally {
+            if (loading) loading.style.display = 'none';
+        }
+    };
+    
+    input.click();
+}
+
+// ====================== FORMATEAR RUT ======================
+function formatearRutParaBusqueda(rut) {
+    if (!rut) return '';
+    // Limpiar caracteres no deseados
+    let clean = rut.toString().replace(/[^0-9kK]/g, '').toUpperCase();
+    if (clean.length < 7) return '';
+    
+    const dv = clean.slice(-1);
+    let numero = clean.slice(0, -1);
+    // Agregar puntos
+    numero = numero.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    
+    return `${numero}-${dv}`;
+}
+
+// ====================== CONVERTIR FECHA (SOPORTA NÚMEROS DE EXCEL) ======================
+function convertirFechaApp(fechaStr) {
+    if (!fechaStr) return '';
+    
+    // Si ya es ISO string
+    if (typeof fechaStr === 'string' && fechaStr.includes('T')) {
+        return fechaStr;
+    }
+    
+    // Si es número de Excel (fecha serial) - CORREGIDO
+    if (typeof fechaStr === 'number') {
+        // Excel cuenta días desde el 1/1/1900, pero tiene un error de 1 día
+        const fecha = new Date((fechaStr - 25569) * 86400000);
+        if (!isNaN(fecha.getTime())) {
+            return fecha.toISOString();
+        }
+    }
+    
+    // Si es string, probar diferentes formatos
+    if (typeof fechaStr === 'string') {
+        let fecha = null;
+        
+        // Formato: DD/MM/YYYY
+        let match = fechaStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+        if (match) {
+            const dia = match[1].padStart(2, '0');
+            const mes = match[2].padStart(2, '0');
+            const año = match[3];
+            fecha = new Date(`${año}-${mes}-${dia}T00:00:00Z`);
+            if (!isNaN(fecha.getTime())) return fecha.toISOString();
+        }
+        
+        // Formato: YYYY-MM-DD
+        match = fechaStr.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+        if (match) {
+            const año = match[1];
+            const mes = match[2].padStart(2, '0');
+            const dia = match[3].padStart(2, '0');
+            fecha = new Date(`${año}-${mes}-${dia}T00:00:00Z`);
+            if (!isNaN(fecha.getTime())) return fecha.toISOString();
+        }
+        
+        // Intentar con Date directamente
+        fecha = new Date(fechaStr);
+        if (!isNaN(fecha.getTime())) {
+            return fecha.toISOString();
+        }
+    }
+    
+    console.warn(`⚠️ Fecha no reconocida: ${fechaStr}`);
+    return '';
+}
+
+/*aqui termina cargar registro de llamadas desde excel*/
+
+
+
+// ====================== DESCARGAR REGISTRO DE LLAMADAS SOLO DE PACIENTES FILTRADOS ======================
+async function descargarRegistroLlamadas() {
+    if (!patients || patients.length === 0) {
+        alert("❌ No hay pacientes cargados.");
+        return;
+    }
+    
+    // Obtener los pacientes actualmente filtrados en la tabla
+    const pacientesFiltrados = obtenerPacientesFiltrados();
+    
+    if (pacientesFiltrados.length === 0) {
+        alert("❌ No hay pacientes en la lista actual. Revisa los filtros aplicados.");
+        return;
+    }
+    
+    const loading = document.getElementById('loadingModal');
+    if (loading) loading.style.display = 'flex';
+    
+    try {
+        const todasLasLlamadas = [];
+        
+        for (const patient of pacientesFiltrados) {
+            // Obtener el paciente completo desde Firebase (incluye historialLlamadas)
+            const snapshot = await db.ref(`patients/${patient.firebaseKey}`).once('value');
+            const patientCompleto = snapshot.val();
+            
+            if (patientCompleto && patientCompleto.historialLlamadas && Object.keys(patientCompleto.historialLlamadas).length > 0) {
+                const llamadas = Object.values(patientCompleto.historialLlamadas);
+                
+                llamadas.forEach(llamada => {
+                    // Formatear fecha para el Excel
+                    let fechaLlamadaFormateada = '';
+                    if (llamada.fechaLlamada) {
+                        const fecha = new Date(llamada.fechaLlamada);
+                        if (!isNaN(fecha.getTime())) {
+                            fechaLlamadaFormateada = fecha.toLocaleDateString('es-CL') + ' ' + fecha.toLocaleTimeString('es-CL');
+                        } else {
+                            fechaLlamadaFormateada = llamada.fechaLlamada;
+                        }
+                    }
+                    
+                    let fechaProximoFormateada = '';
+                    if (llamada.proximoLlamado) {
+                        const fecha = new Date(llamada.proximoLlamado);
+                        if (!isNaN(fecha.getTime())) {
+                            fechaProximoFormateada = fecha.toLocaleDateString('es-CL');
+                        } else {
+                            fechaProximoFormateada = llamada.proximoLlamado;
+                        }
+                    }
+                    
+                    todasLasLlamadas.push({
+                        'RUT PACIENTE': patientCompleto.rut || '',
+                        'NOMBRE PACIENTE': patientCompleto.nombreApellido || '',
+                        'TELÉFONO': patientCompleto.nContacto || '',
+                        'ESPECIALIDAD': patientCompleto.especialidad || '',
+                        'FECHA LLAMADA': fechaLlamadaFormateada,
+                        'MOTIVO': llamada.motivo || '',
+                        'RECEPTOR': llamada.nombreRec || '',
+                        'RUT RECEPTOR': llamada.rutRec || '',
+                        'PARENTESCO': llamada.parentesco || '',
+                        'RESPUESTA': llamada.respuesta || '',
+                        'OBSERVACIONES': llamada.observaciones || '',
+                        'PRÓXIMO LLAMADO': fechaProximoFormateada,
+                        'REGISTRADO POR': llamada.registradoPor || '',
+                        'FECHA REGISTRO': llamada.timestamp ? new Date(llamada.timestamp).toLocaleDateString('es-CL') : ''
+                    });
+                });
+            }
+        }
+        
+        if (todasLasLlamadas.length === 0) {
+            alert("❌ No hay registros de llamadas para los pacientes filtrados.");
+            if (loading) loading.style.display = 'none';
+            return;
+        }
+        
+        // Ordenar por fecha de llamada (más reciente primero)
+        todasLasLlamadas.sort((a, b) => {
+            const fechaA = new Date(a['FECHA LLAMADA'].split(' ')[0].split('/').reverse().join('-'));
+            const fechaB = new Date(b['FECHA LLAMADA'].split(' ')[0].split('/').reverse().join('-'));
+            return fechaB - fechaA;
+        });
+        
+        // Crear Excel
+        const ws = XLSX.utils.json_to_sheet(todasLasLlamadas);
+        
+        // Ajustar anchos de columnas
+        ws['!cols'] = [
+            {wch:15}, // RUT PACIENTE
+            {wch:30}, // NOMBRE PACIENTE
+            {wch:15}, // TELÉFONO
+            {wch:20}, // ESPECIALIDAD
+            {wch:20}, // FECHA LLAMADA
+            {wch:30}, // MOTIVO
+            {wch:25}, // RECEPTOR
+            {wch:15}, // RUT RECEPTOR
+            {wch:15}, // PARENTESCO
+            {wch:20}, // RESPUESTA
+            {wch:40}, // OBSERVACIONES
+            {wch:15}, // PRÓXIMO LLAMADO
+            {wch:25}, // REGISTRADO POR
+            {wch:12}  // FECHA REGISTRO
+        ];
+        
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Registro_Llamadas');
+        
+        // Descargar
+        const fecha = new Date().toISOString().slice(0, 10);
+        XLSX.writeFile(wb, `Registro_Llamadas_${fecha}.xlsx`);
+        
+        alert(`✅ Reporte generado correctamente\n\n📞 Total de llamadas exportadas: ${todasLasLlamadas.length}\n👥 Pacientes considerados: ${pacientesFiltrados.length}`);
+        
+    } catch (error) {
+        console.error(error);
+        alert("❌ Error al generar el reporte: " + error.message);
+    } finally {
+        if (loading) loading.style.display = 'none';
+    }
+}
+
+// ====================== OBTENER PACIENTES FILTRADOS ACTUALMENTE ======================
+function obtenerPacientesFiltrados() {
+    const busqueda = (document.getElementById('busquedaGeneral')?.value || '').toLowerCase().trim();
+    const especialidad = document.getElementById('filterEspecialidad')?.value || '';
+    const medico = document.getElementById('filterMedico')?.value || '';
+    const estatus = document.getElementById('filterEstatus')?.value || '';
+    const comuna = document.getElementById('filterComuna')?.value || '';
+    const fechaDesde = document.getElementById('filterFechaDesde')?.value || '';
+    const fechaHasta = document.getElementById('filterFechaHasta')?.value || '';
+    
+    let filtered = [...patients];
+    
+    if (busqueda) {
+        filtered = filtered.filter(p => {
+            const texto = `${p.nombreApellido || ''} ${p.rut || ''} ${p.diagnostico || ''} ${p.intervencion || ''} ${p.especialidad || ''} ${p.medicoTratante || ''}`.toLowerCase();
+            return texto.includes(busqueda);
+        });
+    }
+    
+    if (especialidad) {
+        filtered = filtered.filter(p => p.especialidad === especialidad);
+    }
+    
+    if (medico) {
+        filtered = filtered.filter(p => p.medicoTratante === medico);
+    }
+    
+    if (estatus) {
+        filtered = filtered.filter(p => p.estatusTabla === estatus);
+    }
+    
+    if (comuna) {
+        filtered = filtered.filter(p => p.comuna === comuna);
+    }
+    
+    if (fechaDesde || fechaHasta) {
+        filtered = filtered.filter(p => {
+            const fechaInd = new Date(p.fechaIndQx || 0);
+            let pasa = true;
+            if (fechaDesde && fechaInd < new Date(fechaDesde)) pasa = false;
+            if (fechaHasta && fechaInd > new Date(fechaHasta)) pasa = false;
+            return pasa;
+        });
+    }
+    
+    if (typeof soloSinFolio !== 'undefined' && soloSinFolio) {
+        filtered = filtered.filter(p => {
+            const folio = (p.folio || '').toString().trim();
+            return folio === '';
+        });
+    }
+    
+    if (typeof mostrarDuplicados !== 'undefined' && mostrarDuplicados) {
+        const rutCount = {};
+        filtered.forEach(p => {
+            if (p.rut) rutCount[p.rut] = (rutCount[p.rut] || 0) + 1;
+        });
+        filtered = filtered.filter(p => p.rut && rutCount[p.rut] > 1);
+    }
+    
+    return filtered;
+}
+
+
+
+
+
+
+
+
+
+
+// ====================== OBTENER TEXTO DE FILTROS APLICADOS ======================
+function obtenerTextoFiltros() {
+    const busqueda = (document.getElementById('busquedaGeneral')?.value || '').trim();
+    const especialidad = document.getElementById('filterEspecialidad')?.value || '';
+    const medico = document.getElementById('filterMedico')?.value || '';
+    const estatus = document.getElementById('filterEstatus')?.value || '';
+    const comuna = document.getElementById('filterComuna')?.value || '';
+    const fechaDesde = document.getElementById('filterFechaDesde')?.value || '';
+    const fechaHasta = document.getElementById('filterFechaHasta')?.value || '';
+    
+    const filtros = [];
+    if (busqueda) filtros.push(`🔍 Búsqueda: "${busqueda}"`);
+    if (especialidad) filtros.push(`🏥 Especialidad: ${especialidad}`);
+    if (medico) filtros.push(`👨‍⚕️ Médico: ${medico}`);
+    if (estatus) filtros.push(`📊 Estatus: ${estatus}`);
+    if (comuna) filtros.push(`🏠 Comuna: ${comuna}`);
+    if (fechaDesde) filtros.push(`📅 Desde: ${fechaDesde}`);
+    if (fechaHasta) filtros.push(`📅 Hasta: ${fechaHasta}`);
+    if (typeof soloSinFolio !== 'undefined' && soloSinFolio) filtros.push(`📄 Solo sin folio`);
+    if (typeof mostrarDuplicados !== 'undefined' && mostrarDuplicados) filtros.push(`🔄 Mostrando duplicados`);
+    
+    return filtros.length > 0 ? filtros.join(' | ') : 'Ningún filtro aplicado';
+}
+
+
+
+
+
+
+
+
+
+// ====================== IMPRIMIR REGISTRO DE LLAMADAS (SOLO PACIENTES FILTRADOS) ======================
+async function imprimirRegistroLlamadas() {
+    if (!patients || patients.length === 0) {
+        alert("❌ No hay pacientes cargados.");
+        return;
+    }
+    
+    // Obtener los pacientes actualmente filtrados en la tabla
+    const pacientesFiltrados = obtenerPacientesFiltrados();
+    
+    if (pacientesFiltrados.length === 0) {
+        alert("❌ No hay pacientes en la lista actual. Revisa los filtros aplicados.");
+        return;
+    }
+    
+    const loading = document.getElementById('loadingModal');
+    if (loading) loading.style.display = 'flex';
+    
+    try {
+        const todasLasLlamadas = [];
+        
+        for (const patient of pacientesFiltrados) {
+            // Obtener el paciente completo desde Firebase (incluye historialLlamadas)
+            const snapshot = await db.ref(`patients/${patient.firebaseKey}`).once('value');
+            const patientCompleto = snapshot.val();
+            
+            if (patientCompleto && patientCompleto.historialLlamadas && Object.keys(patientCompleto.historialLlamadas).length > 0) {
+                const llamadas = Object.values(patientCompleto.historialLlamadas);
+                
+                llamadas.forEach(llamada => {
+                    // Formatear fecha
+                    let fechaLlamadaFormateada = '';
+                    if (llamada.fechaLlamada) {
+                        const fecha = new Date(llamada.fechaLlamada);
+                        if (!isNaN(fecha.getTime())) {
+                            fechaLlamadaFormateada = fecha.toLocaleDateString('es-CL') + ' ' + fecha.toLocaleTimeString('es-CL');
+                        } else {
+                            fechaLlamadaFormateada = String(llamada.fechaLlamada);
+                        }
+                    }
+                    
+                    let fechaProximoFormateada = '';
+                    if (llamada.proximoLlamado) {
+                        const fecha = new Date(llamada.proximoLlamado);
+                        if (!isNaN(fecha.getTime())) {
+                            fechaProximoFormateada = fecha.toLocaleDateString('es-CL');
+                        } else {
+                            fechaProximoFormateada = String(llamada.proximoLlamado);
+                        }
+                    }
+                    
+                    // Asegurar que observaciones sea string
+                    let observacionesText = '';
+                    if (llamada.observaciones) {
+                        observacionesText = String(llamada.observaciones);
+                        if (observacionesText.length > 100) {
+                            observacionesText = observacionesText.substring(0, 100) + '...';
+                        }
+                    }
+                    
+                    todasLasLlamadas.push({
+                        rut: patientCompleto.rut || '',
+                        nombre: patientCompleto.nombreApellido || '',
+                        telefono: patientCompleto.nContacto || '',
+                        especialidad: patientCompleto.especialidad || '',
+                        fechaLlamada: fechaLlamadaFormateada,
+                        motivo: llamada.motivo ? String(llamada.motivo) : '',
+                        receptor: llamada.nombreRec ? String(llamada.nombreRec) : '',
+                        rutReceptor: llamada.rutRec ? String(llamada.rutRec) : '',
+                        parentesco: llamada.parentesco ? String(llamada.parentesco) : '',
+                        respuesta: llamada.respuesta ? String(llamada.respuesta) : '',
+                        observaciones: observacionesText,
+                        proximoLlamado: fechaProximoFormateada,
+                        registradoPor: llamada.registradoPor ? String(llamada.registradoPor) : ''
+                    });
+                });
+            }
+        }
+        
+        if (todasLasLlamadas.length === 0) {
+            alert("❌ No hay registros de llamadas para los pacientes filtrados.");
+            if (loading) loading.style.display = 'none';
+            return;
+        }
+        
+        // Ordenar por fecha de llamada (más reciente primero)
+        todasLasLlamadas.sort((a, b) => {
+            const fechaA = new Date(a.fechaLlamada.split(' ')[0].split('/').reverse().join('-'));
+            const fechaB = new Date(b.fechaLlamada.split(' ')[0].split('/').reverse().join('-'));
+            return fechaB - fechaA;
+        });
+        
+        // Generar HTML para impresión
+        const printWindow = window.open('', '_blank');
+        
+        let tablaHTML = `
+            <!DOCTYPE html>
+            <html lang="es">
+            <head>
+                <meta charset="UTF-8">
+                <title>Registro de Llamadas - Unidad Prequirúrgica</title>
+                <style>
+                    * {
+                        margin: 0;
+                        padding: 0;
+                        box-sizing: border-box;
+                    }
+                    body {
+                        font-family: 'Roboto', Arial, sans-serif;
+                        margin: 20px;
+                        font-size: 11px;
+                        line-height: 1.4;
+                        color: #1e2937;
+                    }
+                    .header {
+                        text-align: center;
+                        margin-bottom: 25px;
+                        border-bottom: 3px solid #1e40af;
+                        padding-bottom: 15px;
+                    }
+                    .logo {
+                        height: 70px;
+                    }
+                    h1 {
+                        font-size: 18px;
+                        margin: 5px 0;
+                        color: #1e40af;
+                    }
+                    h2 {
+                        font-size: 14px;
+                        margin: 3px 0;
+                        color: #334155;
+                    }
+                    .filters-info {
+                        background: #f8fafc;
+                        padding: 10px;
+                        margin-bottom: 20px;
+                        border-radius: 8px;
+                        font-size: 10px;
+                        border: 1px solid #e2e8f0;
+                    }
+                    table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin-top: 15px;
+                    }
+                    th, td {
+                        border: 1px solid #94a3b8;
+                        padding: 8px 6px;
+                        text-align: left;
+                        vertical-align: top;
+                    }
+                    th {
+                        background: #1e40af;
+                        color: white;
+                        font-weight: 600;
+                        font-size: 10px;
+                    }
+                    td {
+                        font-size: 9px;
+                    }
+                    tr:nth-child(even) {
+                        background: #f8fafc;
+                    }
+                    .footer {
+                        margin-top: 30px;
+                        text-align: center;
+                        font-size: 9px;
+                        color: #64748b;
+                        border-top: 1px solid #cbd5e1;
+                        padding-top: 10px;
+                    }
+                    .total-registros {
+                        margin-top: 15px;
+                        font-weight: bold;
+                        text-align: right;
+                        font-size: 10px;
+                    }
+                    @media print {
+                        body {
+                            margin: 10px;
+                        }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <img src="logo.png" alt="Hospital Illapel" class="logo" onerror="this.style.display='none'">
+                    <h1>HOSPITAL DE ILLAPEL - UNIDAD DE PREQUIRÚRGICO</h1>
+                    <h2>REGISTRO DE LLAMADAS REALIZADAS</h2>
+                    <p>Fecha de generación: ${new Date().toLocaleDateString('es-CL')} ${new Date().toLocaleTimeString('es-CL')}</p>
+                </div>
+                
+                <div class="filters-info">
+                    <p><strong>📋 Filtros aplicados:</strong> ${obtenerTextoFiltros()}</p>
+                    <p>✅ Total de llamadas: <strong>${todasLasLlamadas.length}</strong> | 👥 Pacientes considerados: <strong>${pacientesFiltrados.length}</strong></p>
+                </div>
+                
+                <table>
+                    <thead>
+                        <tr>
+                            <th>RUT</th>
+                            <th>Paciente</th>
+                            <th>Teléfono</th>
+                            <th>Especialidad</th>
+                            <th>Fecha Llamada</th>
+                            <th>Motivo</th>
+                            <th>Receptor</th>
+                            <th>Parentesco</th>
+                            <th>Respuesta</th>
+                            <th>Observaciones</th>
+                            <th>Próximo Llamado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        for (const llamada of todasLasLlamadas) {
+            tablaHTML += `
+                <tr>
+                    <td>${llamada.rut || '-'}</td>
+                    <td>${llamada.nombre || '-'}</td>
+                    <td>${llamada.telefono || '-'}</td>
+                    <td>${llamada.especialidad || '-'}</td>
+                    <td>${llamada.fechaLlamada || '-'}</td>
+                    <td>${llamada.motivo || '-'}</td>
+                    <td>${llamada.receptor || '-'}</td>
+                    <td>${llamada.parentesco || '-'}</td>
+                    <td>${llamada.respuesta || '-'}</td>
+                    <td style="max-width: 200px;">${llamada.observaciones || '-'}</td>
+                    <td>${llamada.proximoLlamado || '-'}</td>
+                </tr>
+            `;
+        }
+        
+        tablaHTML += `
+                    </tbody>
+                </table>
+                
+                <div class="total-registros">
+                    Total de llamadas registradas: ${todasLasLlamadas.length}
+                </div>
+                
+                <div class="footer">
+                    Generado por Sistema Unidad Prequirúrgica - Hospital de Illapel
+                </div>
+            </body>
+            </html>
+        `;
+        
+        printWindow.document.write(tablaHTML);
+        printWindow.document.close();
+        
+        setTimeout(() => {
+            printWindow.print();
+        }, 500);
+        
+    } catch (error) {
+        console.error(error);
+        alert("❌ Error al generar el reporte: " + error.message);
+    } finally {
+        if (loading) loading.style.display = 'none';
+    }
+}
