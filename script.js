@@ -3520,13 +3520,7 @@ async function eliminarRegistroHistorial(patientKey, historialKey) {
         // Eliminar el registro específico del historial
         await db.ref(`patients/${patientKey}/historial/${historialKey}`).remove();
         
-        // Agregar un nuevo registro al historial indicando la eliminación
-        await db.ref(`patients/${patientKey}/historial`).push({
-            fecha: new Date().toISOString(),
-            usuario: currentUser ? currentUser.email : 'Sistema',
-            accion: "Eliminación de registro",
-            descripcion: `Se eliminó un registro del historial (${historialKey})`
-        });
+        
         
         alert("✅ Registro del historial eliminado correctamente.");
         
