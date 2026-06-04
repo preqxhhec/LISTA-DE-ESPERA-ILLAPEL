@@ -464,6 +464,12 @@
                     <button onclick="downloadCSV()" class="btn-secondary" style="background:#10b981; color:white;">📥 Descargar CSV</button>
                     <button onclick="downloadExcel()" class="btn-secondary" style="background:#2563eb; color:white;">📊 Descargar Excel</button>
                     <button onclick="printPatientList()" class="btn-secondary" style="background:#f97316; color:white;">🖨️ Imprimir Lista</button>
+                    <button onclick="descargarRegistroLlamadas()" class="btn-secondary" style="background:#8b5cf6; color:white;">
+    📞 Descargar Registro de Llamadas
+</button>
+<button onclick="imprimirRegistroLlamadas()" class="btn-secondary" style="background:#f59e0b; color:white;">
+    🖨️ Imprimir Registro de Llamadas
+</button>
                 </div>
 
                 <div id="resultadosContador"></div>
@@ -496,6 +502,11 @@
 
                 <button onclick="imprimirTodasLasLlamadas()" class="btn-secondary" style="background:#f97316; color:white; margin-bottom: 15px;">
     🖨️ Imprimir Reporte de Llamadas
+    
+</button>
+
+<button onclick="migrarLlamadasDesdeExcel()" class="btn-primary" style="background:#8b5cf6; margin-bottom:15px;">
+    📤 Migrar Llamadas desde Excel
 </button>
                 
                 
@@ -705,4 +716,3 @@
     <script src="script.js"></script>
 </body>
 </html>
-
