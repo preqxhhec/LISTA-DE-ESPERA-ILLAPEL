@@ -214,6 +214,30 @@
         </table>
     </div>
 
+
+<!-- Pacientes pendientes de llamado -->
+<h3 style="margin: 30px 0 15px 0;">📞 Pacientes para Llamar (Fecha Programada)</h3>
+<div class="table-container">
+    <table id="llamadosPendientesTable" class="cross-table">
+        <thead>
+    <tr>
+        <th>Paciente</th>
+        <th>RUT</th>
+        <th>Teléfono</th>
+        <th>Especialidad</th>
+        <th>Fecha Programada</th>
+        <th>Días de Aviso</th>
+        <th>Última Observación</th>
+        <th>Acción</th>
+    </tr>
+</thead>
+        <tbody id="llamadosPendientesBody"></tbody>
+    </table>
+</div>
+
+
+
+
     <!-- Botón IA -->
     <div style="margin-top: 25px; text-align: center;">
         <button onclick="analizarConIA()" class="btn-primary" style="background: #8b5cf6; border: none; padding: 12px 28px;">
@@ -379,6 +403,12 @@
                         <textarea id="indicacionesAnest" rows="3"></textarea>
                     </div>
 
+                    <div class="form-group">
+    <label>📞 Fecha Próximo Llamado</label>
+     <input type="date" id="fechaProximoLlamado" style="width:100%; padding:10px;">
+    <small style="color: #64748b;">Si se programa una fecha, aparecerá en la lista de llamados pendientes</small>
+</div>
+
                   <div style="display: flex; gap: 15px; justify-content: center;">
     <button type="submit" class="btn-primary" style="padding: 10px 24px;">💾 Guardar Paciente</button>
     <button type="button" id="btnCancelarEdicion" class="btn-secondary" style="padding: 10px 24px; background: #64748b; display: none;" onclick="cancelarEdicion()">❌ Cancelar</button>
@@ -463,6 +493,10 @@
             <section id="usersSection" class="section" style="display: none;">
                 <h2>👥 Gestión de Usuarios</h2>
                 <p style="color:#64748b; margin-bottom:20px;">Solo visible para Administradores • Total: <strong id="totalUsers">0</strong></p>
+
+                <button onclick="imprimirTodasLasLlamadas()" class="btn-secondary" style="background:#f97316; color:white; margin-bottom: 15px;">
+    🖨️ Imprimir Reporte de Llamadas
+</button>
                 
                 
                <!-- ===== FORMULARIO PARA CREAR NUEVOS USUARIOS (AGREGAR AQUÍ) ===== -->
@@ -633,17 +667,18 @@
 
     <!-- MODALES -->
     <div id="patientModal" class="modal" style="display: none;">
-        <div class="modal-content">
-            <span class="close" onclick="closeModal()">&times;</span>
-            <h2 id="modalTitle">Detalle del Paciente</h2>
-            <div id="modalBody" class="modal-body"></div>
-            <div class="modal-buttons">
-                <button onclick="editCurrentPatient()" class="btn-primary">✏️ Editar Paciente</button>
-                <button onclick="printPatient()" class="btn-secondary">🖨️ Imprimir Informe</button>
-                <button onclick="deleteCurrentPatient()" class="btn-danger">🗑️ Eliminar</button>
-            </div>
+    <div class="modal-content">
+        <span class="close" onclick="closeModal()">&times;</span>
+        <h2 id="modalTitle">Detalle del Paciente</h2>
+        <div id="modalBody" class="modal-body"></div>
+        <div class="modal-buttons">
+            <button onclick="editCurrentPatient()" class="btn-primary">✏️ Editar Paciente</button>
+            <button id="btnRegistrarLlamadaModal" class="btn-secondary" style="background:#10b981;">📞 Registrar Llamada</button>
+            <button onclick="printPatient()" class="btn-secondary">🖨️ Imprimir Informe</button>
+            <button onclick="deleteCurrentPatient()" class="btn-danger">🗑️ Eliminar</button>
         </div>
     </div>
+</div>
 
     <div id="loadingModal" class="modal" style="display: none;">
         <div class="modal-content" style="text-align:center; max-width:400px;">
@@ -670,3 +705,4 @@
     <script src="script.js"></script>
 </body>
 </html>
+
