@@ -47,6 +47,7 @@
             <li onclick="showSection('dashboard'); closeSidebar()" class="active"><i class="fas fa-home"></i> Dashboard</li>
             <li onclick="showSection('newPatient'); closeSidebar()"><i class="fas fa-user-plus"></i> Nuevo Paciente</li>
             <li onclick="showSection('patientList'); closeSidebar()"><i class="fas fa-list"></i> Lista de Pacientes</li>
+            <li onclick="showSection('historicoRdll'); closeSidebar()"><i class="fas fa-history"></i> Visor Histórico (RDLL)</li>
             <li onclick="showSection('users'); closeSidebar()" id="usersMenuItem" style="display:none;"><i class="fas fa-users-cog"></i> Gestión de Usuarios</li>
         </ul>
     </div>
@@ -115,8 +116,51 @@
             <h3>📊 Mediana Espera Programación</h3>
             <p id="medianaEsperaProgramacion" style="font-size: 1.8rem; font-weight: 700;">0 días</p>
             <small style="font-size: 0.8rem;">Desde Fecha Estatus Programable</small>
-        </div>
+        </div>       
     </div>
+
+<!-- Percentiles con rangos EXCLUYENTES - solo pacientes -->
+<<div class="stats-grid" style="margin-top: 20px;">
+    <div class="stat-card" style="background: linear-gradient(135deg, #3b82f6, #1e40af); color: white;">
+        <h3>📊 Percentil 25</h3>
+        <p id="percentil25Valor" style="font-size: 1.3rem; font-weight: 700;">0 días</p>
+        <p id="percentil25Conteo" style="font-size: 1.5rem; font-weight: bold;">0 pacientes</p>
+    </div>
+    <div class="stat-card" style="background: linear-gradient(135deg, #10b981, #059669); color: white;">
+        <h3>📊 Percentil 50</h3>
+        <p id="percentil50Valor" style="font-size: 1.3rem; font-weight: 700;">0 días</p>
+        <p id="percentil50Conteo" style="font-size: 1.5rem; font-weight: bold;">0 pacientes</p>
+    </div>
+    <div class="stat-card" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white;">
+        <h3>📊 Percentil 75</h3>
+        <p id="percentil75Valor" style="font-size: 1.3rem; font-weight: 700;">0 días</p>
+        <p id="percentil75Conteo" style="font-size: 1.5rem; font-weight: bold;">0 pacientes</p>
+    </div>
+    <div class="stat-card" style="background: linear-gradient(135deg, #ef4444, #dc2626); color: white;">
+        <h3>📊 Percentil 90</h3>
+        <p id="percentil90Valor" style="font-size: 1.3rem; font-weight: 700;">0 días</p>
+        <p id="percentil90Conteo" style="font-size: 1.5rem; font-weight: bold;">0 pacientes</p>
+    </div>
+    <div class="stat-card" style="background: linear-gradient(135deg, #6b7280, #4b5563); color: white;">
+        <h3>📊 Mayor Espera</h3>
+        <p id="percentilRestoValor" style="font-size: 1.3rem; font-weight: 700;">0 días</p>
+        <p id="percentilRestoConteo" style="font-size: 1.5rem; font-weight: bold;">0 pacientes</p>
+    </div>
+  <!-- Selector de fuente para percentiles - DASHBOARD -->
+<div style="background: #f8fafc; padding: 12px 20px; border-radius: 12px; margin: 15px 0 20px 0; display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+    <label style="font-weight: 600; color: #1e40af;">📊 Calcular percentiles desde:</label>
+    <label style="cursor: pointer;">
+        <input type="radio" name="fuentePercentilDashboard" value="fechaIndQx" checked onchange="cambiarFuenteDashboard('fechaIndQx')">
+        Fecha Indicación Qx
+    </label>
+    <label style="cursor: pointer;">
+        <input type="radio" name="fuentePercentilDashboard" value="fechaEstatusProgram" onchange="cambiarFuenteDashboard('fechaEstatusProgram')">
+        Fecha Estatus Programable
+    </label>
+</div>
+</div>
+
+
 
     <!-- Prioridades y GES -->
     <div class="stats-grid">
@@ -446,7 +490,25 @@
                          <option value="">Todas las Comunas</option>
                             </select>
                     </div>
+                    <div class="filter-group">
+    <label>Percentil</label>
+    <select id="filterPercentil" onchange="filterPatients()">
+        <option value="">Todos los percentiles</option>
+        <option value="p25">Percentil 25</option>
+        <option value="p50">Percentil 50</option>
+        <option value="p75">Percentil 75</option>
+        <option value="p90">Percentil 90</option>
+        <option value="resto">Mayor espera</option>
+    </select>
+</div>
 
+<div class="filter-group" style="min-width: 200px;">
+    <label>📊 Calcular T. Espera desde:</label>
+    <select id="fuentePercentilLista" onchange="cambiarFuenteLista(this.value)" style="width: 100%;">
+        <option value="fechaIndQx">Fecha Indicación Qx</option>
+        <option value="fechaEstatusProgram">Fecha Estatus Programable</option>
+    </select>
+</div>
 
                     <div class="filter-group">
                         <label>Desde (Ind. Qx)</label>
@@ -672,8 +734,115 @@
     </div>
 </div>
 
-
             </section>
+
+            <!-- VISOR HISTÓRICO RDLL -->
+<section id="historicoRdllSection" class="section" style="display: none;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:10px;">
+        <h2>📜 Visor Histórico - Registro Diario de Lista de Espera (RDLL)</h2>
+        <div>
+            <button id="btnNuevoRegistroRdll" class="btn-primary" style="background:#10b981;">✏️ Nuevo Registro</button>
+            <button id="btnCargarExcelRdll" class="btn-primary" style="background:#8b5cf6;">📂 Cargar Excel</button>
+        </div>
+    </div>
+    
+    <div class="filters" style="margin-bottom:20px;">
+        <div class="filter-group" style="flex:3;">
+            <label>🔍 Búsqueda General</label>
+            <input type="text" id="busquedaRdll" placeholder="Buscar en todos los campos..." onkeyup="filtrarRdll()">
+        </div>
+        <div class="filter-group">
+            <label>Filtrar por campo</label>
+            <select id="campoFiltroRdll" onchange="filtrarRdll()">
+                <option value="todos">Todos los campos</option>
+                <option value="NOMBRE">Nombre</option>
+                <option value="RUT">RUT</option>
+                <option value="DIAGNOSTICO">Diagnóstico</option>
+                <option value="MOTIVO LLAMADO">Motivo</option>
+            </select>
+        </div>
+        <button onclick="limpiarFiltrosRdll()" class="btn-secondary">Limpiar</button>
+        <button onclick="exportarRdllExcel()" class="btn-secondary" style="background:#2563eb;">📥 Exportar</button>
+    </div>
+    
+    <div id="contadorRdll" style="margin:10px 0; padding:8px 15px; background:#eff6ff; border-radius:8px;"></div>
+    
+    <div class="table-container scrollable-table">
+        <table id="tablaRdll" class="cross-table">
+            <thead>
+                <tr><th>Fecha</th><th>Nombre</th><th>RUT</th><th>Diagnóstico</th><th>Teléfono</th><th>Motivo</th><th>Respuesta</th><th>Próx. Llamado</th><th>Funcionario</th><th>Acciones</th></thead>
+            <tbody id="tbodyRdll"><tr><td colspan="10" style="text-align:center;">Cargando...</td></tr></tbody>
+        </table>
+    </div>
+</section>
+
+<!-- MODAL DETALLE RDLL -->
+<div id="modalRdllDetalle" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width:750px;">
+        <span class="close" onclick="cerrarModalRdllDetalle()">&times;</span>
+        <h2 style="color:#1e40af;">📋 Detalle Registro</h2>
+        <div id="modalRdllBody" class="modal-body"></div>
+        <div class="modal-buttons">
+            <button onclick="cerrarModalRdllDetalle()" class="btn-secondary">Cerrar</button>
+            <button id="btnEditarRdllModal" class="btn-primary" style="background:#f59e0b; display:none;">✏️ Editar</button>
+            <button id="btnEliminarRdllModal" class="btn-danger" style="display:none;">🗑️ Eliminar</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL FORMULARIO RDLL -->
+<div id="modalRdllForm" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width:850px; max-height:90vh; overflow-y:auto;">
+        <span class="close" onclick="cerrarModalRdllForm()">&times;</span>
+        <h2 id="tituloRdllForm" style="color:#1e40af;">✏️ Nuevo Registro RDLL</h2>
+        <form id="formRdll">
+            <div class="form-row">
+                <div class="form-group"><label>📅 Fecha *</label><input type="date" id="rdll_fecha" required></div>
+                <div class="form-group"><label>👤 Nombre *</label><input type="text" id="rdll_nombre" required style="text-transform:uppercase;"></div>
+                <div class="form-group"><label>🆔 RUT *</label><input type="text" id="rdll_rut" placeholder="12.345.678-9" onkeyup="this.value=formatRut(this.value)" required></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>📝 Diagnóstico *</label><textarea id="rdll_diagnostico" rows="2" required></textarea></div>
+                <div class="form-group"><label>📞 Teléfono</label><input type="text" id="rdll_telefono"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>👤 Nombre Receptor</label><input type="text" id="rdll_nombre_receptor" style="text-transform:uppercase;"></div>
+                <div class="form-group"><label>🆔 RUT Receptor</label><input type="text" id="rdll_rut_receptor" onkeyup="this.value=formatRut(this.value)"></div>
+                <div class="form-group"><label>Parentesco</label><input type="text" id="rdll_parentesco" style="text-transform:uppercase;"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>📋 Motivo *</label>
+                    <select id="rdll_motivo" required>
+                        <option value="">Seleccionar</option>
+                        <option value="HORA DE EXAMENES">HORA DE EXAMENES</option>
+                        <option value="HORA DE ANESTESIA">HORA DE ANESTESIA</option>
+                        <option value="ACTUALIZACION DE INFORMACION">ACTUALIZACION DE INFORMACION</option>
+                        <option value="FECHA CIRUGIA">FECHA CIRUGIA</option>
+                        <option value="SUSPENDIDO">SUSPENDIDO</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>📝 Respuesta *</label>
+                    <select id="rdll_respuesta" required>
+                        <option value="">Seleccionar</option>
+                        <option value="ACEPTA">ACEPTA</option>
+                        <option value="RECHAZA">RECHAZA</option>
+                        <option value="POSTERGA">POSTERGA</option>
+                        <option value="NO RESPONDE">NO RESPONDE</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group"><label>📝 Observaciones</label><textarea id="rdll_observaciones" rows="2"></textarea></div>
+            <div class="form-row">
+                <div class="form-group"><label>📅 Próximo Llamado</label><input type="date" id="rdll_proximo_llamado"></div>
+                <div class="form-group"><label>👤 Funcionario</label><input type="text" id="rdll_funcionario" readonly style="background:#f3f4f6;"></div>
+            </div>
+            <input type="hidden" id="rdll_key">
+            <div class="modal-buttons"><button type="submit" class="btn-primary">💾 Guardar</button><button type="button" onclick="cerrarModalRdllForm()" class="btn-secondary">Cancelar</button></div>
+        </form>
+    </div>
+</div>
+
+
         </main>
     </div>
 
@@ -717,3 +886,6 @@
     <script src="script.js"></script>
 </body>
 </html>
+
+
+
