@@ -310,6 +310,12 @@ document.getElementById('patientForm').addEventListener('submit', async (e) => {
         showSection('patientList');
         currentPatientKey = null;
 
+// Restaurar los filtros que estaban antes de editar
+setTimeout(() => {
+    restaurarFiltros();
+}, 200);
+
+
     } catch (error) {
         console.error(error);
         alert("Error: " + error.message);
@@ -359,6 +365,7 @@ function loadPatients() {
 let currentCallPatient = null;  // Variable específica para llamadas
 let currentSortColumn = null;
 let currentSortOrder = 'asc';
+const RDLL_DB_PATH = 'rdll_historico';
 
 // Para el gráfico de tendencia
 let tendenciaChartInstance = null;
@@ -391,8 +398,7 @@ let comunasLista = [];             // Lista de comunas
 // Ruta en Firebase para guardar configuraciones
 const CONFIG_DB_PATH = 'configuracion/filtrosDinamicos';
 
-// ====================== TABLA CON ORDENAMIENTO POR CLIC ======================
-// ====================== TABLA CON ORDENAMIENTO CORREGIDO ======================
+
 
 
 // ====================== TABLA CON ORDENAMIENTO POR DEFECTO (T. Espera ASCENDENTE) ======================
@@ -413,9 +419,14 @@ function renderPatientsTable(data) {
 
             switch(currentSortColumn) {
                 case 'tEspera':
-                    valA = calculateWaitingDays(a.fechaIndQx);
-                    valB = calculateWaitingDays(b.fechaIndQx);
-                    break;
+    if (fuentePercentilLista === 'fechaEstatusProgram') {
+        valA = calculateWaitingDays(a.fechaEstatusProgram);
+        valB = calculateWaitingDays(b.fechaEstatusProgram);
+    } else {
+        valA = calculateWaitingDays(a.fechaIndQx);
+        valB = calculateWaitingDays(b.fechaIndQx);
+    }
+    break;
                 case 'esperaProgram':
                     valA = calculateWaitingDays(a.fechaEstatusProgram);
                     valB = calculateWaitingDays(b.fechaEstatusProgram);
@@ -441,13 +452,19 @@ function renderPatientsTable(data) {
 
     data.forEach((patient) => {
         const fechaFormateada = patient.fechaIndQx ? formatDate(patient.fechaIndQx) : '-';
+        
+       
+      // Calcular días según la fuente seleccionada en la lista
+const diasEspera = fuentePercentilLista === 'fechaEstatusProgram' 
+    ? calculateWaitingDays(patient.fechaEstatusProgram) 
+    : calculateWaitingDays(patient.fechaIndQx);
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td><strong>${patient.id || '-'}</strong></td>
             <td>${patient.estatusTabla || '-'}</td>
             <td>${fechaFormateada}</td>
-            <td><strong>${calculateWaitingDays(patient.fechaIndQx)}</strong></td>
+            <td><strong>${diasEspera}</strong></td>
             <td>${patient.fechaEstatusProgram ? calculateWaitingDays(patient.fechaEstatusProgram) : '-'}</td>
             <td>${patient.nombreApellido || ''}</td>
             <td>${patient.rut || ''}</td>
@@ -465,31 +482,58 @@ function renderPatientsTable(data) {
 // ====================== FORMATEO DE FECHA CORREGIDO (ZONA HORARIA) ======================
 function formatDate(dateString) {
     if (!dateString) return '-';
-
+    
+    // === NUEVO: Si es número (fecha serial de Excel) ===
+    if (typeof dateString === 'number') {
+        // Excel: días desde 1/1/1900 (restando 25569 para ajustar a Unix)
+        const fecha = new Date((dateString - 25569) * 86400000);
+        if (!isNaN(fecha.getTime())) {
+            const dayStr = String(fecha.getDate()).padStart(2, '0');
+            const monthStr = String(fecha.getMonth() + 1).padStart(2, '0');
+            const yearStr = fecha.getFullYear();
+            return `${dayStr}/${monthStr}/${yearStr}`;
+        }
+        return String(dateString);
+    }
+    
+    // === NUEVO: Si no es string, convertirlo ===
+    if (typeof dateString !== 'string') {
+        dateString = String(dateString);
+    }
+    
     // Si ya viene en formato DD/MM/YYYY, devolver tal cual
-    if (dateString.includes('/')) return dateString;
-
+    if (dateString.includes('/') && dateString.match(/^\d{2}\/\d{2}\/\d{4}/)) {
+        return dateString;
+    }
+    
+    // Formato DD-MM-YYYY (común en Excel chileno)
+    if (dateString.match(/^\d{2}-\d{2}-\d{4}/)) {
+        const [day, month, year] = dateString.split('-');
+        return `${day}/${month}/${year}`;
+    }
+    
     // Crear fecha sin problema de timezone
     let date;
-
+    
     if (dateString.includes('T')) {
         // Si viene con hora (de Firebase)
         date = new Date(dateString);
-    } else {
+    } else if (dateString.includes('-') && dateString.match(/^\d{4}-\d{2}-\d{2}/)) {
         // Formato YYYY-MM-DD → forzar medianoche local
         const [year, month, day] = dateString.split('-').map(Number);
-        date = new Date(year, month - 1, day);   // ← Clave: constructor local
+        date = new Date(year, month - 1, day);
+    } else {
+        date = new Date(dateString);
     }
-
+    
     if (isNaN(date.getTime())) return dateString;
-
+    
     const dayStr = String(date.getDate()).padStart(2, '0');
     const monthStr = String(date.getMonth() + 1).padStart(2, '0');
     const yearStr = date.getFullYear();
-
+    
     return `${dayStr}/${monthStr}/${yearStr}`;
 }
-
 
 
 
@@ -543,20 +587,84 @@ function updateDashboard() {
         if (!p.estatusTabla) return true;
         const estatus = p.estatusTabla.toString().trim().toUpperCase();
         return !noGestionables.includes(estatus);
+
+        const tiemposEspera = pacientesGestionables.map(p => {
+    if (fuentePercentilDashboard === 'fechaEstatusProgram') {
+        return calculateWaitingDays(p.fechaEstatusProgram);
+    } else {
+        return calculateWaitingDays(p.fechaIndQx);
+    }
+}).filter(t => t > 0);
     });
     
     // 1. Total de pacientes gestionables
     const totalGestionables = pacientesGestionables.length;
     document.getElementById('totalPatients').textContent = totalGestionables;
     
-    // 2. Medianas de espera (solo gestionables)
-    const tiemposEspera = pacientesGestionables.map(p => calculateWaitingDays(p.fechaIndQx)).filter(t => t > 0);
-    const medianaGeneral = calcularMediana(tiemposEspera);
-    document.getElementById('medianaEsperaGeneral').innerHTML = `${medianaGeneral} <span style="font-size: 0.9rem;">días</span>`;
+
+
+
+   // 2. Medianas de espera (solo gestionables)
+const tiemposEspera = pacientesGestionables.map(p => {
+    if (fuentePercentilDashboard === 'fechaEstatusProgram') {
+        return calculateWaitingDays(p.fechaEstatusProgram);
+    } else {
+        return calculateWaitingDays(p.fechaIndQx);
+    }
+}).filter(t => t > 0);
+const medianaGeneral = calcularMediana(tiemposEspera);
+document.getElementById('medianaEsperaGeneral').innerHTML = `${medianaGeneral} <span style="font-size: 0.9rem;">días</span>`;
+
+const tiemposEsperaProgram = pacientesGestionables.map(p => calculateWaitingDays(p.fechaEstatusProgram)).filter(t => t > 0);
+const medianaProgramacion = calcularMediana(tiemposEsperaProgram);
+document.getElementById('medianaEsperaProgramacion').innerHTML = `${medianaProgramacion} <span style="font-size: 0.9rem;">días</span>`;
     
-    const tiemposEsperaProgram = pacientesGestionables.map(p => calculateWaitingDays(p.fechaEstatusProgram)).filter(t => t > 0);
-    const medianaProgramacion = calcularMediana(tiemposEsperaProgram);
-    document.getElementById('medianaEsperaProgramacion').innerHTML = `${medianaProgramacion} <span style="font-size: 0.9rem;">días</span>`;
+   
+   
+   
+   
+    // ========== PERCENTILES Y RANGOS ==========
+const estadisticas = calcularEstadisticasEspera(tiemposEspera, totalGestionables);
+
+    // ← NUEVO: Guardar percentiles actualizados para el filtro de lista
+    percentilesGlobales = {
+        p25: estadisticas.p25.max,
+        p50: estadisticas.p50.max,
+        p75: estadisticas.p75.max,
+        p90: estadisticas.p90.max
+    };
+
+// Actualizar percentiles en el DOM
+const p25Valor = document.getElementById('percentil25Valor');
+const p25Conteo = document.getElementById('percentil25Conteo');
+const p50Valor = document.getElementById('percentil50Valor');
+const p50Conteo = document.getElementById('percentil50Conteo');
+const p75Valor = document.getElementById('percentil75Valor');
+const p75Conteo = document.getElementById('percentil75Conteo');
+const p90Valor = document.getElementById('percentil90Valor');
+const p90Conteo = document.getElementById('percentil90Conteo');
+const pRestoValor = document.getElementById('percentilRestoValor');
+const pRestoConteo = document.getElementById('percentilRestoConteo');
+
+if (p25Valor) p25Valor.innerHTML = `≤ ${estadisticas.p25.max} <span style="font-size: 0.8rem;">días</span>`;
+if (p25Conteo) p25Conteo.innerHTML = `${estadisticas.p25.pacientes} pacientes`;
+
+if (p50Valor) p50Valor.innerHTML = `${estadisticas.p50.min} - ${estadisticas.p50.max} <span style="font-size: 0.8rem;">días</span>`;
+if (p50Conteo) p50Conteo.innerHTML = `${estadisticas.p50.pacientes} pacientes`;
+
+if (p75Valor) p75Valor.innerHTML = `${estadisticas.p75.min} - ${estadisticas.p75.max} <span style="font-size: 0.8rem;">días</span>`;
+if (p75Conteo) p75Conteo.innerHTML = `${estadisticas.p75.pacientes} pacientes`;
+
+if (p90Valor) p90Valor.innerHTML = `${estadisticas.p90.min} - ${estadisticas.p90.max} <span style="font-size: 0.8rem;">días</span>`;
+if (p90Conteo) p90Conteo.innerHTML = `${estadisticas.p90.pacientes} pacientes`;
+
+if (pRestoValor) pRestoValor.innerHTML = `≥ ${estadisticas.resto.min} <span style="font-size: 0.8rem;">días</span>`;
+if (pRestoConteo) pRestoConteo.innerHTML = `${estadisticas.resto.pacientes} pacientes`;
+
+// Renderizar tabla de rangos de espera
+
+// ========== FIN PERCENTILES ==========
+    
     
     // 3. Prioridades (solo gestionables)
     const p1 = pacientesGestionables.filter(p => p.prioridad === 'P1').length;
@@ -623,6 +731,9 @@ function updateDashboard() {
     // 11. Gráfico de tendencia mensual (solo gestionables)
     renderTendenciaMensual(pacientesGestionables);
 }
+
+
+
 
 // ====================== GRÁFICO POR ESPECIALIDAD ======================
 function renderEspecialidadChart(data) {
@@ -922,6 +1033,8 @@ function closeModal() {
 function editCurrentPatient() {
     if (!currentModalPatient) return;
 
+    guardarFiltrosActuales();
+
     currentPatientKey = currentModalPatient.firebaseKey;
     closeModal();
     showSection('newPatient');
@@ -1016,9 +1129,12 @@ function showSection(section) {
     if (active) active.classList.add('active');
 
     // === LÓGICA SEGÚN SECCIÓN ===
-    if (section === 'patientList') {
-        setTimeout(restaurarFiltros, 100);
-    }
+    //if (section === 'patientList') {
+       // setTimeout(restaurarFiltros, 100);
+    //}
+    if (section === 'historicoRdll') {
+    cargarRdll();
+}
     else if (section === 'users') {
         setTimeout(loadUsers, 150);     // ← Importante: Cargar usuarios automáticamente
     }
@@ -1278,11 +1394,22 @@ document.getElementById('filterEspecialidad').addEventListener('change', functio
     }
 });
 
+// === AGREGAR EL NUEVO EVENT LISTENER AQUÍ ===
+document.getElementById('filterPercentil')?.addEventListener('change', function() {
+    filtroPercentil = this.value;
+    filterPatients();
+});
 
 
 // ====================== VARIABLES GLOBALES DE FILTROS ======================
 let soloSinFolio = false;
 let mostrarDuplicados = false;
+let filtroPercentil = '';
+let percentilesGlobales = { p25: 0, p50: 0, p75: 0, p90: 0 };
+
+// Fuentes independientes para Dashboard y Lista de Pacientes
+let fuentePercentilDashboard = 'fechaIndQx';  // Para Dashboard (radios)
+let fuentePercentilLista = 'fechaIndQx';      // Para Lista de pacientes (select)
 
 
 // ====================== FILTRADO PRINCIPAL ======================
@@ -1327,12 +1454,38 @@ function filterPatients() {
         }
 
         if (soloSinProgramacion) {
-        const fechaEstatusProgram = p.fechaEstatusProgram || '';
-        if (fechaEstatusProgram.trim() !== '') pasa = false;
+            const fechaEstatusProgram = p.fechaEstatusProgram || '';
+            if (fechaEstatusProgram.trim() !== '') pasa = false;
         }
+
+    // Filtrar por percentil
+if (filtroPercentil) {
+    let dias;
+    if (fuentePercentilLista === 'fechaEstatusProgram') {
+        dias = calculateWaitingDays(p.fechaEstatusProgram);
+    } else {
+        dias = calculateWaitingDays(p.fechaIndQx);
+    }
+    
+    if (dias <= 0) {
+        pasa = false;
+    } else if (filtroPercentil === 'p25' && dias > percentilesGlobales.p25) {
+        pasa = false;
+    } else if (filtroPercentil === 'p50' && (dias <= percentilesGlobales.p25 || dias > percentilesGlobales.p50)) {
+        pasa = false;
+    } else if (filtroPercentil === 'p75' && (dias <= percentilesGlobales.p50 || dias > percentilesGlobales.p75)) {
+        pasa = false;
+    } else if (filtroPercentil === 'p90' && (dias <= percentilesGlobales.p75 || dias > percentilesGlobales.p90)) {
+        pasa = false;
+    } else if (filtroPercentil === 'resto' && dias <= percentilesGlobales.p90) {
+        pasa = false;
+    }
+}
 
         return pasa;
     });
+    
+  
 
     // ==================== FILTRO DE DUPLICADOS ====================
     if (mostrarDuplicados) {
@@ -2375,7 +2528,10 @@ function guardarFiltrosActuales() {
         filterFechaHasta: document.getElementById('filterFechaHasta')?.value || '',
         soloSinFolio: soloSinFolio,
         mostrarDuplicados: mostrarDuplicados,
-        soloSinProgramacion: soloSinProgramacion
+        soloSinProgramacion: soloSinProgramacion,
+        filtroPercentil: filtroPercentil,
+        fuentePercentilDashboard: fuentePercentilDashboard,
+        fuentePercentilLista: fuentePercentilLista
     };
 }
 
@@ -2386,16 +2542,35 @@ function restaurarFiltros() {
     document.getElementById('filterEspecialidad').value = lastFilters.filterEspecialidad || '';
     document.getElementById('filterMedico').value = lastFilters.filterMedico || '';
     document.getElementById('filterEstatus').value = lastFilters.filterEstatus || '';
-     document.getElementById('filterComuna').value = lastFilters.filterComuna || '';
+    document.getElementById('filterComuna').value = lastFilters.filterComuna || '';
     document.getElementById('filterFechaDesde').value = lastFilters.filterFechaDesde || '';
     document.getElementById('filterFechaHasta').value = lastFilters.filterFechaHasta || '';
-
+    
     // Restaurar toggles
     soloSinFolio = lastFilters.soloSinFolio;
     mostrarDuplicados = lastFilters.mostrarDuplicados;
     soloSinProgramacion = lastFilters.soloSinProgramacion || false;
-
-    // Actualizar botones visualmente
+    
+    // Restaurar filtro de percentil
+    filtroPercentil = lastFilters.filtroPercentil || '';
+    document.getElementById('filterPercentil').value = filtroPercentil;
+    
+    // Restaurar fuentes independientes
+    fuentePercentilDashboard = lastFilters.fuentePercentilDashboard || 'fechaIndQx';
+    fuentePercentilLista = lastFilters.fuentePercentilLista || 'fechaIndQx';
+    
+    // Sincronizar controles visuales del Dashboard
+    const radioIndQx = document.querySelector('input[name="fuentePercentilDashboard"][value="fechaIndQx"]');
+    const radioEstatus = document.querySelector('input[name="fuentePercentilDashboard"][value="fechaEstatusProgram"]');
+    const selectLista = document.getElementById('fuentePercentilLista');
+    
+    if (radioIndQx && radioEstatus) {
+        radioIndQx.checked = (fuentePercentilDashboard === 'fechaIndQx');
+        radioEstatus.checked = (fuentePercentilDashboard === 'fechaEstatusProgram');
+    }
+    if (selectLista) selectLista.value = fuentePercentilLista;
+    
+    // Restaurar botones visualmente (Sin Folio)
     const btnSinFolio = document.getElementById('btnSinFolio');
     if (btnSinFolio) {
         if (soloSinFolio) {
@@ -2408,7 +2583,8 @@ function restaurarFiltros() {
             btnSinFolio.textContent = 'Sin Folio';
         }
     }
-
+    
+    // Restaurar botones visualmente (Duplicados)
     const btnDuplicados = document.getElementById('btnDuplicados');
     if (btnDuplicados) {
         if (mostrarDuplicados) {
@@ -2421,22 +2597,21 @@ function restaurarFiltros() {
             btnDuplicados.textContent = 'Mostrar Duplicados (RUT)';
         }
     }
-
-// Y restaurar el botón visualmente:
-const btnSinProgramacion = document.getElementById('btnSinProgramacion');
-if (btnSinProgramacion) {
-    if (soloSinProgramacion) {
-        btnSinProgramacion.style.background = '#eab308';
-        btnSinProgramacion.style.color = 'black';
-        btnSinProgramacion.textContent = '✅ Solo Sin Fecha Programación';
-    } else {
-        btnSinProgramacion.style.background = '';
-        btnSinProgramacion.style.color = '';
-        btnSinProgramacion.textContent = '📅 Sin Fecha Programación';
+    
+    // Restaurar botón Sin Programación
+    const btnSinProgramacion = document.getElementById('btnSinProgramacion');
+    if (btnSinProgramacion) {
+        if (soloSinProgramacion) {
+            btnSinProgramacion.style.background = '#eab308';
+            btnSinProgramacion.style.color = 'black';
+            btnSinProgramacion.textContent = '✅ Solo Sin Fecha Programación';
+        } else {
+            btnSinProgramacion.style.background = '';
+            btnSinProgramacion.style.color = '';
+            btnSinProgramacion.textContent = '📅 Sin Fecha Programación';
+        }
     }
-}
-
-
+    
     // Aplicar los filtros restaurados
     filterPatients();
 }
@@ -3002,7 +3177,14 @@ function renderMedianasPorEspecialidad(pacientesFiltrados) {
     
     especialidades.forEach(esp => {
         const pacientesEsp = pacientesFiltrados.filter(p => p.especialidad === esp);
-        const tiemposEsp = pacientesEsp.map(p => calculateWaitingDays(p.fechaIndQx)).filter(t => t > 0);
+        // Usar fuentePercentilDashboard para la mediana de espera
+        const tiemposEsp = pacientesEsp.map(p => {
+            if (fuentePercentilDashboard === 'fechaEstatusProgram') {
+                return calculateWaitingDays(p.fechaEstatusProgram);
+            } else {
+                return calculateWaitingDays(p.fechaIndQx);
+            }
+        }).filter(t => t > 0);
         const tiemposProgramEsp = pacientesEsp.map(p => calculateWaitingDays(p.fechaEstatusProgram)).filter(t => t > 0);
         
         const medianaEsp = calcularMediana(tiemposEsp);
@@ -3027,16 +3209,28 @@ function renderTopEspera(pacientesFiltrados) {
     tbody.innerHTML = '';
     
     const top10 = [...pacientesFiltrados]
-        .sort((a, b) => calculateWaitingDays(b.fechaIndQx) - calculateWaitingDays(a.fechaIndQx))
+        .sort((a, b) => {
+            const diasA = fuentePercentilDashboard === 'fechaEstatusProgram' 
+                ? calculateWaitingDays(a.fechaEstatusProgram) 
+                : calculateWaitingDays(a.fechaIndQx);
+            const diasB = fuentePercentilDashboard === 'fechaEstatusProgram' 
+                ? calculateWaitingDays(b.fechaEstatusProgram) 
+                : calculateWaitingDays(b.fechaIndQx);
+            return diasB - diasA;
+        })
         .slice(0, 10);
     
     top10.forEach(p => {
+        const diasEspera = fuentePercentilDashboard === 'fechaEstatusProgram' 
+            ? calculateWaitingDays(p.fechaEstatusProgram) 
+            : calculateWaitingDays(p.fechaIndQx);
+            
         const row = document.createElement('tr');
         row.innerHTML = `
             <td>${p.nombreApellido || '-'}</span></strong></span></span></span></strong></span></span></span></span></span></td>
             <td>${p.rut || '-'}</span></strong></span></span></span></strong></span></span></span></span></span></td>
             <td>${p.especialidad || '-'}</span></strong></span></span></span></strong></span></span></span></span></span></td>
-            <td><strong style="color: #ef4444;">${calculateWaitingDays(p.fechaIndQx)} días</strong></span></strong></span></span></span></strong></span></span></span></span></span></td>
+            <td><strong style="color: #ef4444;">${diasEspera} días</strong></span></strong></span></span></span></strong></span></span></span></span></span></td>
             <td>${p.prioridad || '-'}</span></strong></span></span></span></strong></span></span></span></span></span></td>
             <td><button onclick="showPatientModal('${p.firebaseKey}')" class="btn-secondary" style="padding: 4px 12px;">Ver</button></span></strong></span></span></span></strong></span></span></span></span></span></td>
         `;
@@ -5537,4 +5731,435 @@ function toggleSinProgramacion() {
         }
     }
     filterPatients();
+}
+
+
+
+
+// ====================== VISOR HISTÓRICO RDLL ======================
+let datosRdll = [];
+let datosRdllFiltrados = [];
+let editandoRdllKey = null;
+const RDLL_PATH = 'rdll_historico';
+
+async function cargarRdll() {
+    try {
+        const snap = await db.ref('rdll_historico').once('value');
+        const data = snap.val();
+        
+        datosRdll = data ? Object.entries(data).map(([k, v]) => ({ key: k, ...v })) : [];
+        datosRdll.sort((a, b) => new Date(b.FECHA || 0) - new Date(a.FECHA || 0));
+        filtrarRdll();
+        
+        console.log(`✅ RDLL cargado: ${datosRdll.length} registros`);
+    } catch (e) { 
+        console.error("Error cargando RDLL:", e); 
+    }
+}
+
+function filtrarRdll() {
+    const busq = (document.getElementById('busquedaRdll')?.value || '').toLowerCase().trim();
+    const campo = document.getElementById('campoFiltroRdll')?.value || 'todos';
+    if (!busq) datosRdllFiltrados = [...datosRdll];
+    else {
+        datosRdllFiltrados = datosRdll.filter(r => {
+            if (campo === 'todos') return Object.values(r).some(v => v && String(v).toLowerCase().includes(busq));
+            const val = r[campo];
+            return val && String(val).toLowerCase().includes(busq);
+        });
+    }
+    renderTablaRdll();
+    const cont = document.getElementById('contadorRdll');
+    if (cont) cont.innerHTML = `📊 <strong>${datosRdllFiltrados.length}</strong> registros (de ${datosRdll.length} total)`;
+}
+
+function renderTablaRdll() {
+    const tbody = document.getElementById('tbodyRdll');
+    if (!tbody) return;
+    
+    if (datosRdllFiltrados.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">No hay registros</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = '';
+    
+    datosRdllFiltrados.forEach(r => {
+        const tr = document.createElement('tr');
+        
+        // === FIX: Proteger contra valores no string ===
+        let diagnostico = r.DIAGNOSTICO;
+        if (diagnostico === undefined || diagnostico === null) diagnostico = '-';
+        if (typeof diagnostico !== 'string') diagnostico = String(diagnostico);
+        
+        let nombre = r.NOMBRE;
+        if (nombre === undefined || nombre === null) nombre = '-';
+        if (typeof nombre !== 'string') nombre = String(nombre);
+        
+        let rut = r.RUT;
+        if (rut === undefined || rut === null) rut = '-';
+        if (typeof rut !== 'string') rut = String(rut);
+        
+        let telefono = r.TELEFONO;
+        if (telefono === undefined || telefono === null) telefono = '-';
+        if (typeof telefono !== 'string') telefono = String(telefono);
+        
+        let motivo = r['MOTIVO LLAMADO'];
+        if (motivo === undefined || motivo === null) motivo = '-';
+        if (typeof motivo !== 'string') motivo = String(motivo);
+        
+        let respuesta = r['RESPUESTA RECEPTOR'];
+        if (respuesta === undefined || respuesta === null) respuesta = '-';
+        if (typeof respuesta !== 'string') respuesta = String(respuesta);
+        
+        let funcionario = r.FUNCIONARIO;
+        if (funcionario === undefined || funcionario === null) funcionario = '-';
+        if (typeof funcionario !== 'string') funcionario = String(funcionario);
+        
+        tr.innerHTML = `
+            <td>${formatDate(r.FECHA)}</td>
+            <td><strong>${nombre.substring(0, 50)}</strong></td>
+            <td>${rut}</td>
+            <td style="max-width:200px;">${diagnostico.substring(0, 35)}${diagnostico.length > 35 ? '...' : ''}</td>
+            <td>${telefono}</td>
+            <td>${motivo}</td>
+            <td>${respuesta}</td>
+            <td>${formatDate(r['FECHA PROXIMO LLAMADO'])}</td>
+            <td>${funcionario}</td>
+            <td><button onclick="verDetalleRdll('${r.key}')" style="background:#3b82f6;color:white;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;">👁️ Ver</button></td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function verDetalleRdll(key) {
+    const r = datosRdll.find(d => d.key === key);
+    if (!r) return;
+    let html = '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;">';
+    const campos = ['FECHA','NOMBRE','RUT','DIAGNOSTICO','TELEFONO','NOMBRE RECEPTOR','RUT RECEPTOR','PARENTESCO RECEPTOR','MOTIVO LLAMADO','RESPUESTA RECEPTOR','OBSERVACIONES','FECHA PROXIMO LLAMADO','FUNCIONARIO'];
+    campos.forEach(c => {
+        let val = r[c] || '-';
+        if (c === 'FECHA' || c === 'FECHA PROXIMO LLAMADO') val = formatDate(val);
+        html += `<p><strong>${c}:</strong><br>${val}</p>`;
+    });
+    html += '</div>';
+    document.getElementById('modalRdllBody').innerHTML = html;
+    
+    const btnEditar = document.getElementById('btnEditarRdllModal');
+    const btnEliminar = document.getElementById('btnEliminarRdllModal');
+    if (currentUserRole === 'admin') {
+        btnEditar.style.display = 'inline-block';
+        btnEliminar.style.display = 'inline-block';
+        btnEditar.setAttribute('onclick', `abrirEditarRdll('${key}')`);
+        btnEliminar.setAttribute('onclick', `eliminarRdll('${key}')`);
+    } else {
+        btnEditar.style.display = 'none';
+        btnEliminar.style.display = 'none';
+    }
+    document.getElementById('modalRdllDetalle').style.display = 'flex';
+}
+
+function cerrarModalRdllDetalle() { document.getElementById('modalRdllDetalle').style.display = 'none'; }
+
+function limpiarFiltrosRdll() {
+    document.getElementById('busquedaRdll').value = '';
+    document.getElementById('campoFiltroRdll').value = 'todos';
+    filtrarRdll();
+}
+
+function exportarRdllExcel() {
+    if (datosRdllFiltrados.length === 0) { alert("No hay datos"); return; }
+    const datos = datosRdllFiltrados.map(r => ({
+        FECHA: r.FECHA || '', NOMBRE: r.NOMBRE || '', RUT: r.RUT || '', DIAGNOSTICO: r.DIAGNOSTICO || '',
+        TELEFONO: r.TELEFONO || '', 'NOMBRE RECEPTOR': r['NOMBRE RECEPTOR'] || '', 'RUT RECEPTOR': r['RUT RECEPTOR'] || '',
+        'PARENTESCO RECEPTOR': r['PARENTESCO RECEPTOR'] || '', 'MOTIVO LLAMADO': r['MOTIVO LLAMADO'] || '',
+        'RESPUESTA RECEPTOR': r['RESPUESTA RECEPTOR'] || '', OBSERVACIONES: r.OBSERVACIONES || '',
+        'FECHA PROXIMO LLAMADO': r['FECHA PROXIMO LLAMADO'] || '', FUNCIONARIO: r.FUNCIONARIO || ''
+    }));
+    const ws = XLSX.utils.json_to_sheet(datos);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Historico_RDLL');
+    XLSX.writeFile(wb, `Historico_RDLL_${new Date().toISOString().slice(0,10)}.xlsx`);
+    alert("✅ Exportado");
+}
+
+function abrirNuevoRdll() {
+    editandoRdllKey = null;
+    document.getElementById('tituloRdllForm').textContent = '✏️ Nuevo Registro RDLL';
+    document.getElementById('formRdll').reset();
+    document.getElementById('rdll_key').value = '';
+    document.getElementById('rdll_fecha').value = new Date().toISOString().split('T')[0];
+    if (currentUser) document.getElementById('rdll_funcionario').value = currentUser.email;
+    document.getElementById('modalRdllForm').style.display = 'flex';
+}
+
+function cerrarModalRdllForm() { document.getElementById('modalRdllForm').style.display = 'none'; }
+
+async function abrirEditarRdll(key) {
+    if (currentUserRole !== 'admin') { alert("Solo administradores"); return; }
+    cerrarModalRdllDetalle();
+    const r = datosRdll.find(d => d.key === key);
+    if (!r) return;
+    editandoRdllKey = key;
+    document.getElementById('tituloRdllForm').textContent = '✏️ Editar Registro RDLL';
+    document.getElementById('rdll_key').value = key;
+    
+    let fechaVal = '', proxVal = '';
+    if (r.FECHA) {
+        const partes = String(r.FECHA).split(/[-:\s]/);
+        if (partes.length >= 3) fechaVal = `${partes[2]}-${partes[1]}-${partes[0]}`;
+    }
+    if (r['FECHA PROXIMO LLAMADO']) {
+        const partes = String(r['FECHA PROXIMO LLAMADO']).split(/[-:\s]/);
+        if (partes.length >= 3) proxVal = `${partes[2]}-${partes[1]}-${partes[0]}`;
+    }
+    
+    document.getElementById('rdll_fecha').value = fechaVal;
+    document.getElementById('rdll_nombre').value = r.NOMBRE || '';
+    document.getElementById('rdll_rut').value = r.RUT || '';
+    document.getElementById('rdll_diagnostico').value = r.DIAGNOSTICO || '';
+    document.getElementById('rdll_telefono').value = r.TELEFONO || '';
+    document.getElementById('rdll_nombre_receptor').value = r['NOMBRE RECEPTOR'] || '';
+    document.getElementById('rdll_rut_receptor').value = r['RUT RECEPTOR'] || '';
+    document.getElementById('rdll_parentesco').value = r['PARENTESCO RECEPTOR'] || '';
+    document.getElementById('rdll_motivo').value = r['MOTIVO LLAMADO'] || '';
+    document.getElementById('rdll_respuesta').value = r['RESPUESTA RECEPTOR'] || '';
+    document.getElementById('rdll_observaciones').value = r.OBSERVACIONES || '';
+    document.getElementById('rdll_proximo_llamado').value = proxVal;
+    document.getElementById('rdll_funcionario').value = r.FUNCIONARIO || currentUser?.email || '';
+    document.getElementById('modalRdllForm').style.display = 'flex';
+}
+
+async function eliminarRdll(key) {
+    if (currentUserRole !== 'admin') { alert("Solo administradores"); return; }
+    if (!confirm("¿Eliminar este registro permanentemente?")) return;
+    const loading = document.getElementById('loadingModal');
+    if (loading) loading.style.display = 'flex';
+    try {
+        await db.ref(`${RDLL_PATH}/${key}`).remove();
+        alert("✅ Registro eliminado");
+        cerrarModalRdllDetalle();
+        await cargarRdll();
+    } catch (e) { alert("Error: " + e.message); }
+    finally { if (loading) loading.style.display = 'none'; }
+}
+
+// Submit formulario RDLL
+document.getElementById('formRdll')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const key = document.getElementById('rdll_key').value;
+    
+    function formatearFechaGuardar(val) {
+        if (!val) return '';
+        if (val.match(/^\d{4}-\d{2}-\d{2}/)) {
+            const [a, m, d] = val.split('-');
+            return `${d}-${m}-${a} 00:00:00`;
+        }
+        return val;
+    }
+    
+    const data = {
+        FECHA: formatearFechaGuardar(document.getElementById('rdll_fecha').value),
+        NOMBRE: document.getElementById('rdll_nombre').value.toUpperCase().trim(),
+        RUT: document.getElementById('rdll_rut').value,
+        DIAGNOSTICO: document.getElementById('rdll_diagnostico').value,
+        TELEFONO: document.getElementById('rdll_telefono').value,
+        'NOMBRE RECEPTOR': document.getElementById('rdll_nombre_receptor').value.toUpperCase().trim(),
+        'RUT RECEPTOR': document.getElementById('rdll_rut_receptor').value,
+        'PARENTESCO RECEPTOR': document.getElementById('rdll_parentesco').value.toUpperCase().trim(),
+        'MOTIVO LLAMADO': document.getElementById('rdll_motivo').value,
+        'RESPUESTA RECEPTOR': document.getElementById('rdll_respuesta').value,
+        OBSERVACIONES: document.getElementById('rdll_observaciones').value,
+        'FECHA PROXIMO LLAMADO': formatearFechaGuardar(document.getElementById('rdll_proximo_llamado').value),
+        FUNCIONARIO: document.getElementById('rdll_funcionario').value || currentUser?.email,
+        timestamp: firebase.database.ServerValue.TIMESTAMP,
+        creadoPor: currentUser?.email || 'Sistema'
+    };
+    
+    if (!data.FECHA || !data.NOMBRE || !data.RUT || !data.DIAGNOSTICO || !data['MOTIVO LLAMADO'] || !data['RESPUESTA RECEPTOR']) {
+        alert("❌ Complete los campos obligatorios");
+        return;
+    }
+    
+    const loading = document.getElementById('loadingModal');
+    if (loading) loading.style.display = 'flex';
+    try {
+        if (key) await db.ref(`${RDLL_PATH}/${key}`).update(data);
+        else await db.ref(RDLL_PATH).push(data);
+        alert(key ? "✅ Registro actualizado" : "✅ Registro guardado");
+        cerrarModalRdllForm();
+        await cargarRdll();
+    } catch (e) { alert("Error: " + e.message); }
+    finally { if (loading) loading.style.display = 'none'; }
+});
+
+// Inicializar eventos y carga
+document.getElementById('btnNuevoRegistroRdll')?.addEventListener('click', abrirNuevoRdll);
+document.getElementById('btnCargarExcelRdll')?.addEventListener('click', () => {
+    if (currentUserRole !== 'admin') { alert("Solo administradores"); return; }
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.xlsx, .xls';
+    input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const loading = document.getElementById('loadingModal');
+        if (loading) loading.style.display = 'flex';
+        try {
+            const data = await file.arrayBuffer();
+            const workbook = XLSX.read(data);
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(sheet);
+            if (rows.length === 0) { alert("Archivo vacío"); return; }
+            
+            for (const row of rows) {
+                const registro = {
+                    FECHA: row.FECHA || row.fecha || '',
+                    NOMBRE: (row.NOMBRE || row.nombre || '').toUpperCase(),
+                    RUT: row.RUT || row.rut || '',
+                    DIAGNOSTICO: row.DIAGNOSTICO || row.diagnostico || '',
+                    TELEFONO: row.TELEFONO || row.telefono || '',
+                    'NOMBRE RECEPTOR': (row['NOMBRE RECEPTOR'] || row.nombre_receptor || '').toUpperCase(),
+                    'RUT RECEPTOR': row['RUT RECEPTOR'] || row.rut_receptor || '',
+                    'PARENTESCO RECEPTOR': (row['PARENTESCO RECEPTOR'] || row.parentesco || '').toUpperCase(),
+                    'MOTIVO LLAMADO': row['MOTIVO LLAMADO'] || row.motivo || '',
+                    'RESPUESTA RECEPTOR': row['RESPUESTA RECEPTOR'] || row.respuesta || '',
+                    OBSERVACIONES: row.OBSERVACIONES || row.observaciones || '',
+                    'FECHA PROXIMO LLAMADO': row['FECHA PROXIMO LLAMADO'] || row.proximo_llamado || '',
+                    FUNCIONARIO: row.FUNCIONARIO || row.funcionario || currentUser?.email || 'Sistema',
+                    timestamp: firebase.database.ServerValue.TIMESTAMP,
+                    creadoPor: currentUser?.email || 'Sistema'
+                };
+                await db.ref(RDLL_PATH).push(registro);
+            }
+            alert(`✅ Cargados ${rows.length} registros`);
+            await cargarRdll();
+        } catch (err) { alert("Error: " + err.message); }
+        finally { if (loading) loading.style.display = 'none'; }
+    };
+    input.click();
+});
+
+
+// ====================== CALCULAR PERCENTILES CON RANGOS EXCLUYENTES ======================
+// ====================== CALCULAR PERCENTILES CON RANGOS EXCLUYENTES ======================
+function calcularEstadisticasEspera(diasEspera, totalPacientes) {
+    if (diasEspera.length === 0) {
+        return {
+            p25: { valor: 0, min: 0, max: 0, pacientes: 0, porcentaje: 0 },
+            p50: { valor: 0, min: 0, max: 0, pacientes: 0, porcentaje: 0 },
+            p75: { valor: 0, min: 0, max: 0, pacientes: 0, porcentaje: 0 },
+            p90: { valor: 0, min: 0, max: 0, pacientes: 0, porcentaje: 0 },
+            resto: { min: 0, max: 0, pacientes: 0, porcentaje: 0 }
+        };
+    }
+    
+    const sorted = [...diasEspera].sort((a, b) => a - b);
+    const n = sorted.length;
+    
+    const getPercentil = (p) => {
+        const index = Math.floor(p * (n - 1));
+        return sorted[index];
+    };
+    
+    const valorP25 = getPercentil(0.25);
+    const valorP50 = getPercentil(0.50);
+    const valorP75 = getPercentil(0.75);
+    const valorP90 = getPercentil(0.90);
+    
+    // Contar pacientes en cada rango EXCLUYENTE
+    const pacientesP25 = sorted.filter(d => d <= valorP25).length;
+    const pacientesP50 = sorted.filter(d => d > valorP25 && d <= valorP50).length;
+    const pacientesP75 = sorted.filter(d => d > valorP50 && d <= valorP75).length;
+    const pacientesP90 = sorted.filter(d => d > valorP75 && d <= valorP90).length;
+    const pacientesResto = sorted.filter(d => d > valorP90).length;
+    
+    return {
+        p25: {
+            valor: valorP25,
+            min: 0,
+            max: valorP25,
+            pacientes: pacientesP25,
+            porcentaje: ((pacientesP25 / totalPacientes) * 100).toFixed(1)
+        },
+        p50: {
+            valor: valorP50,
+            min: valorP25 + 1,
+            max: valorP50,
+            pacientes: pacientesP50,
+            porcentaje: ((pacientesP50 / totalPacientes) * 100).toFixed(1)
+        },
+        p75: {
+            valor: valorP75,
+            min: valorP50 + 1,
+            max: valorP75,
+            pacientes: pacientesP75,
+            porcentaje: ((pacientesP75 / totalPacientes) * 100).toFixed(1)
+        },
+        p90: {
+            valor: valorP90,
+            min: valorP75 + 1,
+            max: valorP90,
+            pacientes: pacientesP90,
+            porcentaje: ((pacientesP90 / totalPacientes) * 100).toFixed(1)
+        },
+        resto: {
+            min: valorP90 + 1,
+            max: sorted[sorted.length - 1],
+            pacientes: pacientesResto,
+            porcentaje: ((pacientesResto / totalPacientes) * 100).toFixed(1)
+        }
+    };
+}
+
+
+
+function getDiasEspera(patient, tipo = 'lista') {
+    if (tipo === 'dashboard') {
+        if (fuentePercentilDashboard === 'fechaEstatusProgram') {
+            return calculateWaitingDays(patient.fechaEstatusProgram);
+        } else {
+            return calculateWaitingDays(patient.fechaIndQx);
+        }
+    } else {
+        if (fuentePercentilLista === 'fechaEstatusProgram') {
+            return calculateWaitingDays(patient.fechaEstatusProgram);
+        } else {
+            return calculateWaitingDays(patient.fechaIndQx);
+        }
+    }
+}
+
+// ====================== CAMBIAR FUENTE DEL DASHBOARD ======================
+function cambiarFuenteDashboard(fuente) {
+    fuentePercentilDashboard = fuente;
+    
+    // Sincronizar solo los radios del Dashboard
+    const radioIndQx = document.querySelector('input[name="fuentePercentilDashboard"][value="fechaIndQx"]');
+    const radioEstatus = document.querySelector('input[name="fuentePercentilDashboard"][value="fechaEstatusProgram"]');
+    
+    if (radioIndQx && radioEstatus) {
+        radioIndQx.checked = (fuente === 'fechaIndQx');
+        radioEstatus.checked = (fuente === 'fechaEstatusProgram');
+    }
+    
+    // Actualizar solo el Dashboard
+    updateDashboard();
+    
+    console.log(`Dashboard: Fuente cambiada a: ${fuente === 'fechaIndQx' ? 'Fecha Indicación Qx' : 'Fecha Estatus Programable'}`);
+}
+
+// ====================== CAMBIAR FUENTE DE LA LISTA DE PACIENTES ======================
+function cambiarFuenteLista(fuente) {
+    fuentePercentilLista = fuente;
+    
+    // Sincronizar solo el select de la lista
+    const selectLista = document.getElementById('fuentePercentilLista');
+    if (selectLista) selectLista.value = fuente;
+    
+    // Actualizar la lista de pacientes
+    renderPatientsTable(patients);
+    if (filtroPercentil) filterPatients();
+    
+    console.log(`Lista: Fuente cambiada a: ${fuente === 'fechaIndQx' ? 'Fecha Indicación Qx' : 'Fecha Estatus Programable'}`);
 }
