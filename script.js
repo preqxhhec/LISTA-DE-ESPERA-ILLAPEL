@@ -1114,8 +1114,19 @@ console.log("Fecha próximo llamado:", currentModalPatient.fechaProximoLlamado);
 
 function deleteCurrentPatient() {
     if (!currentModalPatient || !confirm("¿Eliminar este paciente?")) return;
+    
     db.ref('patients/' + currentModalPatient.firebaseKey).remove()
-        .then(() => { closeModal(); alert("Paciente eliminado"); });
+        .then(() => { 
+            closeModal(); 
+            alert("✅ Paciente eliminado correctamente");
+            
+           
+            restaurarFiltros();
+        })
+        .catch(error => {
+            console.error("Error al eliminar:", error);
+            alert("❌ Error al eliminar paciente: " + error.message);
+        });
 }
 
 // ====================== NAVEGACIÓN ======================
