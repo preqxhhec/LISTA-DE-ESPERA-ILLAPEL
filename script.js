@@ -3739,13 +3739,19 @@ async function eliminarRegistroHistorial(patientKey, historialKey) {
         return;
     }
     
+    
+    
     try {
         // Eliminar el registro específico del historial
         await db.ref(`patients/${patientKey}/historial/${historialKey}`).remove();
         
-        
-        
         alert("✅ Registro del historial eliminado correctamente.");
+        
+        // ✅ RECARGAR LOS PACIENTES PARA ACTUALIZAR LOS DATOS EN MEMORIA
+        await loadPatients();
+        
+        // ✅ RESTAURAR FILTROS DESPUÉS DE RECARGAR
+        restaurarFiltros();
         
         // Recargar el modal para mostrar el historial actualizado
         showPatientModal(patientKey);
@@ -3753,6 +3759,8 @@ async function eliminarRegistroHistorial(patientKey, historialKey) {
     } catch (error) {
         console.error("Error al eliminar registro:", error);
         alert("❌ Error al eliminar: " + error.message);
+    } finally {
+        if (loading) loading.style.display = 'none';
     }
 }
 
@@ -4806,6 +4814,9 @@ async function guardarEdicionLlamada() {
         
         // Recargar datos
         await loadPatients();
+
+        // ✅ RESTAURAR FILTROS DESPUÉS DE RECARGAR
+restaurarFiltros();
         
         // Reabrir el modal del paciente
         showPatientModal(patientKey);
@@ -4869,6 +4880,9 @@ async function eliminarRegistroLlamada(patientKey, llamadaKey) {
         
         // Recargar datos
         await loadPatients();
+
+        // ✅ RESTAURAR FILTROS DESPUÉS DE RECARGAR
+restaurarFiltros();
         
         // Reabrir el modal del paciente
         showPatientModal(patientKey);
