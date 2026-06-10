@@ -202,11 +202,23 @@ function forgotPassword() {
 
 //SEGMENTO 3 (Guardado del Paciente + Auto-cálculos)
 
-// ====================== GUARDAR / ACTUALIZAR PACIENTE CON HISTORIAL ======================
-// ====================== GUARDAR / ACTUALIZAR CON HISTORIAL DETALLADO ======================
+
 // ====================== GUARDAR / ACTUALIZAR CON HISTORIAL INTELIGENTE ======================
+
+let isSubmitting = false;   // ← Variable de bloqueo global (evita doble clic)
+
 document.getElementById('patientForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+
+    // === BLOQUEO CONTRA DOBLE ENVÍO ===
+    if (isSubmitting) {
+        console.log("Envío ya en progreso...");
+        return;
+    }
+    isSubmitting = true;
+
+    const loading = document.getElementById('loadingModal');
+    if (loading) loading.style.display = 'flex';
 
     const patientData = {
         id: document.getElementById('patientId').value || Date.now().toString().slice(-6),
@@ -262,7 +274,6 @@ document.getElementById('patientForm').addEventListener('submit', async (e) => {
 
                 if (oldVal !== newVal) {
                     if (key === 'observaciones' || key === 'indicacionesAnest') {
-                        // Para estos campos mostramos solo lo nuevo agregado
                         const agregado = newVal.replace(oldVal, '').trim();
                         if (agregado) {
                             cambios.push(`<strong>${key}</strong>: Se agregó: "${agregado}"`);
@@ -281,7 +292,6 @@ document.getElementById('patientForm').addEventListener('submit', async (e) => {
 
             await db.ref('patients/' + currentPatientKey).update(patientData);
 
-            // Guardar historial
             await db.ref('patients/' + currentPatientKey + '/historial').push({
                 fecha: new Date().toISOString(),
                 usuario: currentUser ? currentUser.email : 'Sistema',
@@ -291,6 +301,7 @@ document.getElementById('patientForm').addEventListener('submit', async (e) => {
             });
 
             alert("✅ Paciente actualizado correctamente");
+
         } else {
             // Nuevo registro
             const newRef = await db.ref('patients').push(patientData);
@@ -310,18 +321,19 @@ document.getElementById('patientForm').addEventListener('submit', async (e) => {
         showSection('patientList');
         currentPatientKey = null;
 
-// Restaurar los filtros que estaban antes de editar
-setTimeout(() => {
-    restaurarFiltros();
-}, 200);
-
+        // Restaurar filtros
+        setTimeout(() => {
+            restaurarFiltros();
+        }, 250);
 
     } catch (error) {
         console.error(error);
         alert("Error: " + error.message);
+    } finally {
+        isSubmitting = false;
+        if (loading) loading.style.display = 'none';
     }
 });
-
 
 // Auto cálculos
 document.getElementById('fechaNac').addEventListener('change', () => {
@@ -353,9 +365,14 @@ function loadPatients() {
         renderPatientsTable(patients);
         updateDashboard();
         actualizarTablaLlamadosPendientes();
-        cargarEspecialidadesEnFiltroDashboard();  // ← AGREGAR ESTA LÍNEA
-        
+        cargarEspecialidadesEnFiltroDashboard();
+
         setTimeout(makeTableSortable, 300);
+
+        // Restauración definitiva usando localStorage
+        setTimeout(() => {
+            restaurarFiltros();
+        }, 500);
     });
 }
 
@@ -373,17 +390,8 @@ let tendenciaChartInstance = null;
 // Variable para filtro del dashboard
 let dashboardFiltroEspecialidad = '';
 
-// Variables para mantener filtros al editar
-let lastFilters = {
-    busquedaGeneral: '',
-    filterEspecialidad: '',
-    filterMedico: '',
-    filterEstatus: '',
-    filterFechaDesde: '',
-    filterFechaHasta: '',
-    soloSinFolio: false,
-    mostrarDuplicados: false
-};
+
+
 
 // ====================== LISTAS DINÁMICAS PARA FILTROS (AGREGAR ESTO) ======================
 let especialidadesLista = [];      // Nombres de especialidades
@@ -1029,20 +1037,22 @@ function closeModal() {
     document.getElementById('patientModal').style.display = 'none';
 }
 
-// ====================== EDITAR PACIENTE (CARGAR TODOS LOS CAMPOS) ======================
+
+// ====================== EDITAR PACIENTE ======================
 function editCurrentPatient() {
     if (!currentModalPatient) return;
 
-    guardarFiltrosActuales();
+    // Guardar filtros actuales del usuario (usando la nueva función)
+    guardarFiltrosEnStorage();
 
     currentPatientKey = currentModalPatient.firebaseKey;
     closeModal();
     showSection('newPatient');
 
-    // ✅ MOSTRAR EL BOTÓN CANCELAR
+    // Mostrar botón cancelar
     document.getElementById('btnCancelarEdicion').style.display = 'block';
 
-    // Llenar TODOS los campos del formulario
+    // Llenar campos del formulario
     const campos = {
         patientId: currentModalPatient.id,
         estatusTabla: currentModalPatient.estatusTabla,
@@ -1079,7 +1089,6 @@ function editCurrentPatient() {
         fechaProximoLlamado: currentModalPatient.fechaProximoLlamado,
     };
 
-    // Llenar cada campo
     Object.keys(campos).forEach(key => {
         const elemento = document.getElementById(key);
         if (elemento) {
@@ -1087,11 +1096,7 @@ function editCurrentPatient() {
         }
     });
 
-console.log("Editando paciente:", currentModalPatient);
-console.log("Fecha próximo llamado:", currentModalPatient.fechaProximoLlamado);
-
-
-    // Actualizar médico tratante según especialidad
+    // Actualizar médico según especialidad
     if (currentModalPatient.especialidad) {
         filterMedicos();
         setTimeout(() => {
@@ -1110,25 +1115,55 @@ console.log("Fecha próximo llamado:", currentModalPatient.fechaProximoLlamado);
     if (currentModalPatient.fechaEstatusProgram) {
         document.getElementById('esperaProgram').value = calculateWaitingDays(currentModalPatient.fechaEstatusProgram);
     }
+
 }
 
+// ====================== ELIMINAR PACIENTE (MODAL FORZADO) ======================
 function deleteCurrentPatient() {
-    if (!currentModalPatient || !confirm("¿Eliminar este paciente?")) return;
-    
+    if (!currentModalPatient || !confirm("¿Estás seguro de eliminar este paciente? Esta acción es irreversible.")) {
+        return;
+    }
+
+    // Guardar filtros del usuario actual
+    guardarFiltrosEnStorage();
+
+    // === FORZAR MODAL DE ESPERA ===
+    const loading = document.getElementById('loadingModal');
+    if (loading) {
+        loading.style.display = 'flex';
+        loading.style.zIndex = '999999';
+        loading.style.opacity = '1';
+        loading.style.visibility = 'visible';
+        console.log("✅ Modal de eliminación de paciente FORZADO visible");
+    } else {
+        console.error("❌ No se encontró el elemento #loadingModal");
+    }
+
     db.ref('patients/' + currentModalPatient.firebaseKey).remove()
-        .then(() => { 
-            closeModal(); 
+        .then(() => {
             alert("✅ Paciente eliminado correctamente");
+            closeModal();
             
-           
-            restaurarFiltros();
+            loadPatients(); 
+            
+            // Restaurar filtros del usuario
+            setTimeout(() => {
+                restaurarFiltros();
+            }, 500);
         })
-        .catch(error => {
-            console.error("Error al eliminar:", error);
-            alert("❌ Error al eliminar paciente: " + error.message);
+        .catch(err => {
+            console.error(err);
+            alert("Error al eliminar: " + err.message);
+        })
+        .finally(() => {
+            const loadingClose = document.getElementById('loadingModal');
+            if (loadingClose) {
+                loadingClose.style.display = 'none';
+                loadingClose.style.zIndex = '';
+                console.log("✅ Modal de eliminación cerrado");
+            }
         });
 }
-
 // ====================== NAVEGACIÓN ======================
 function showSection(section) {
     closeSidebar();
@@ -1514,7 +1549,8 @@ if (filtroPercentil) {
     renderPatientsTable(filtered);
     mostrarContadorResultados(filtered.length);
 
-    guardarFiltrosActuales();
+    //guardarFiltrosActuales();
+    guardarFiltrosEnStorage();
 }
 
 // ====================== MOSTRAR CONTADOR DE RESULTADOS ======================
@@ -1577,7 +1613,10 @@ function toggleSinFolio() {
             btn.textContent = 'Sin Folio';
         }
     }
+    
     filterPatients();
+    guardarFiltrosEnStorage();
+    
 }
 
 function toggleDuplicados() {
@@ -1595,7 +1634,9 @@ function toggleDuplicados() {
             btn.textContent = 'Mostrar Duplicados (RUT)';
         }
     }
+    
     filterPatients();
+    guardarFiltrosEnStorage();
 }
 
 // ====================== LIMPIAR FILTROS ======================
@@ -2527,61 +2568,64 @@ editCurrentPatient = function() {
     }, 300);
 };
 
-// ====================== GUARDAR FILTROS ACTUALES ======================
-function guardarFiltrosActuales() {
-    lastFilters = {
-        busquedaGeneral: document.getElementById('busquedaGeneral')?.value || '',
-        filterEspecialidad: document.getElementById('filterEspecialidad')?.value || '',
-        filterMedico: document.getElementById('filterMedico')?.value || '',
-        filterEstatus: document.getElementById('filterEstatus')?.value || '',
-        filterComuna: document.getElementById('filterComuna')?.value || '',
-        filterFechaDesde: document.getElementById('filterFechaDesde')?.value || '',
-        filterFechaHasta: document.getElementById('filterFechaHasta')?.value || '',
-        soloSinFolio: soloSinFolio,
-        mostrarDuplicados: mostrarDuplicados,
-        soloSinProgramacion: soloSinProgramacion,
-        filtroPercentil: filtroPercentil,
-        fuentePercentilDashboard: fuentePercentilDashboard,
-        fuentePercentilLista: fuentePercentilLista
-    };
+
+
+// ====================== RESTAURAR FILTROS (VERSIÓN ROBUSTA) ======================
+// ====================== RESTAURAR FILTROS (VERSIÓN FINAL ROBUSTA) ======================
+function restaurarFiltros() {
+    console.log("🔄 Restaurando filtros:", lastFilters);
+    
+    if (!lastFilters) {
+        console.warn("⚠️ lastFilters no está inicializado");
+        return;
+    }
+
+    // Pequeño delay para que los selects dinámicos (especialidades, médicos, etc.) terminen de cargar
+    setTimeout(() => {
+        // 1. Restaurar campos principales
+        const campos = [
+            'busquedaGeneral', 'filterEspecialidad', 'filterMedico', 'filterEstatus',
+            'filterComuna', 'filterFechaDesde', 'filterFechaHasta', 'filterPercentil'
+        ];
+
+        campos.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.value = lastFilters[id] || '';
+            }
+        });
+
+        // 2. Restaurar variables globales
+        soloSinFolio = !!lastFilters.soloSinFolio;
+        mostrarDuplicados = !!lastFilters.mostrarDuplicados;
+        soloSinProgramacion = !!lastFilters.soloSinProgramacion;
+        filtroPercentil = lastFilters.filtroPercentil || '';
+
+        fuentePercentilDashboard = lastFilters.fuentePercentilDashboard || 'fechaIndQx';
+        fuentePercentilLista = lastFilters.fuentePercentilLista || 'fechaIndQx';
+
+        // 3. Sincronizar controles visuales
+        const radioIndQx = document.querySelector('input[name="fuentePercentilDashboard"][value="fechaIndQx"]');
+        const radioEstatus = document.querySelector('input[name="fuentePercentilDashboard"][value="fechaEstatusProgram"]');
+        const selectLista = document.getElementById('fuentePercentilLista');
+
+        if (radioIndQx) radioIndQx.checked = (fuentePercentilDashboard === 'fechaIndQx');
+        if (radioEstatus) radioEstatus.checked = (fuentePercentilDashboard === 'fechaEstatusProgram');
+        if (selectLista) selectLista.value = fuentePercentilLista;
+
+        // 4. Actualizar botones visuales
+        actualizarBotonesFiltrosVisuales();
+
+        // 5. Aplicar los filtros restaurados
+        filterPatients();
+
+        console.log("✅ Filtros restaurados correctamente");
+    }, 220); // Aumentado ligeramente para mayor estabilidad
 }
 
-// ====================== RESTAURAR FILTROS ======================
-function restaurarFiltros() {
-    // Restaurar campos de texto y selects
-    document.getElementById('busquedaGeneral').value = lastFilters.busquedaGeneral || '';
-    document.getElementById('filterEspecialidad').value = lastFilters.filterEspecialidad || '';
-    document.getElementById('filterMedico').value = lastFilters.filterMedico || '';
-    document.getElementById('filterEstatus').value = lastFilters.filterEstatus || '';
-    document.getElementById('filterComuna').value = lastFilters.filterComuna || '';
-    document.getElementById('filterFechaDesde').value = lastFilters.filterFechaDesde || '';
-    document.getElementById('filterFechaHasta').value = lastFilters.filterFechaHasta || '';
-    
-    // Restaurar toggles
-    soloSinFolio = lastFilters.soloSinFolio;
-    mostrarDuplicados = lastFilters.mostrarDuplicados;
-    soloSinProgramacion = lastFilters.soloSinProgramacion || false;
-    
-    // Restaurar filtro de percentil
-    filtroPercentil = lastFilters.filtroPercentil || '';
-    document.getElementById('filterPercentil').value = filtroPercentil;
-    
-    // Restaurar fuentes independientes
-    fuentePercentilDashboard = lastFilters.fuentePercentilDashboard || 'fechaIndQx';
-    fuentePercentilLista = lastFilters.fuentePercentilLista || 'fechaIndQx';
-    
-    // Sincronizar controles visuales del Dashboard
-    const radioIndQx = document.querySelector('input[name="fuentePercentilDashboard"][value="fechaIndQx"]');
-    const radioEstatus = document.querySelector('input[name="fuentePercentilDashboard"][value="fechaEstatusProgram"]');
-    const selectLista = document.getElementById('fuentePercentilLista');
-    
-    if (radioIndQx && radioEstatus) {
-        radioIndQx.checked = (fuentePercentilDashboard === 'fechaIndQx');
-        radioEstatus.checked = (fuentePercentilDashboard === 'fechaEstatusProgram');
-    }
-    if (selectLista) selectLista.value = fuentePercentilLista;
-    
-    // Restaurar botones visualmente (Sin Folio)
+// ====================== ACTUALIZAR BOTONES VISUALES ======================
+function actualizarBotonesFiltrosVisuales() {
+    // Sin Folio
     const btnSinFolio = document.getElementById('btnSinFolio');
     if (btnSinFolio) {
         if (soloSinFolio) {
@@ -2594,8 +2638,8 @@ function restaurarFiltros() {
             btnSinFolio.textContent = 'Sin Folio';
         }
     }
-    
-    // Restaurar botones visualmente (Duplicados)
+
+    // Duplicados
     const btnDuplicados = document.getElementById('btnDuplicados');
     if (btnDuplicados) {
         if (mostrarDuplicados) {
@@ -2605,11 +2649,11 @@ function restaurarFiltros() {
         } else {
             btnDuplicados.style.background = '';
             btnDuplicados.style.color = '';
-            btnDuplicados.textContent = 'Mostrar Duplicados (RUT)';
+            btnDuplicados.textContent = 'Duplicados (RUT)';
         }
     }
-    
-    // Restaurar botón Sin Programación
+
+    // Sin Programación
     const btnSinProgramacion = document.getElementById('btnSinProgramacion');
     if (btnSinProgramacion) {
         if (soloSinProgramacion) {
@@ -2619,14 +2663,10 @@ function restaurarFiltros() {
         } else {
             btnSinProgramacion.style.background = '';
             btnSinProgramacion.style.color = '';
-            btnSinProgramacion.textContent = '📅 Sin Fecha Programación';
+            btnSinProgramacion.textContent = '📅 Sin Fecha Prog';
         }
     }
-    
-    // Aplicar los filtros restaurados
-    filterPatients();
 }
-
 
 
 
@@ -3348,29 +3388,42 @@ function cargarEspecialidadesEnFiltroDashboard() {
 }
 
 // ====================== CREAR USUARIO POR ADMIN ======================
+// ====================== CREAR NUEVO USUARIO (SOLO ADMIN) ======================
+let isCreatingUser = false;   // ← Protección contra doble clic
+
 async function crearUsuarioPorAdmin() {
     // Verificar permisos
     if (currentUserRole !== 'admin') {
         alert("❌ No tienes permisos para realizar esta acción.");
         return;
     }
-    
+
+    // === BLOQUEO CONTRA DOBLE CLIC ===
+    if (isCreatingUser) {
+        console.log("Creación de usuario ya en progreso...");
+        return;
+    }
+    isCreatingUser = true;
+
     const email = document.getElementById('newUserEmail').value.trim();
     const password = document.getElementById('newUserPassword').value;
     const role = document.getElementById('newUserRole').value;
-    
+
     // Validaciones
     if (!email) {
         alert("❌ Ingresa un correo electrónico");
+        isCreatingUser = false;
         return;
     }
     
     if (!password || password.length < 6) {
         alert("❌ La contraseña debe tener mínimo 6 caracteres");
+        isCreatingUser = false;
         return;
     }
     
     if (!confirm(`¿Crear usuario con los siguientes datos?\n\n📧 Email: ${email}\n🔒 Rol: ${role === 'admin' ? 'Administrador' : 'Usuario'}`)) {
+        isCreatingUser = false;
         return;
     }
     
@@ -3399,7 +3452,9 @@ async function crearUsuarioPorAdmin() {
         document.getElementById('newUserRole').value = 'user';
         
         // 4. Recargar lista de usuarios
-        await loadUsers();
+        if (typeof loadUsers === 'function') {
+            await loadUsers();
+        }
         
         alert(`✅ Usuario creado exitosamente:\n\n📧 ${email}\n🔒 Rol: ${role === 'admin' ? 'Administrador' : 'Usuario'}`);
         
@@ -3416,6 +3471,7 @@ async function crearUsuarioPorAdmin() {
             alert("❌ Error al crear usuario: " + error.message);
         }
     } finally {
+        isCreatingUser = false;
         if (loading) loading.style.display = 'none';
     }
 }
@@ -3740,7 +3796,6 @@ function printPatientList() {
 
 // ====================== ELIMINAR REGISTRO DEL HISTORIAL (SOLO ADMIN) ======================
 async function eliminarRegistroHistorial(patientKey, historialKey) {
-    // Verificar permisos de administrador
     if (currentUserRole !== 'admin') {
         alert("❌ No tienes permisos para eliminar registros del historial.");
         return;
@@ -3749,26 +3804,23 @@ async function eliminarRegistroHistorial(patientKey, historialKey) {
     if (!confirm("⚠️ ¿Estás seguro de eliminar este registro del historial?\n\nEsta acción es irreversible.")) {
         return;
     }
-    
-    
-    
+
+    guardarFiltrosEnStorage(); // Guardar filtros antes de modificar
+
+    const loading = document.getElementById('loadingModal');
+    if (loading) loading.style.display = 'flex';
+
     try {
-        // Eliminar el registro específico del historial
         await db.ref(`patients/${patientKey}/historial/${historialKey}`).remove();
         
         alert("✅ Registro del historial eliminado correctamente.");
         
-        // ✅ RECARGAR LOS PACIENTES PARA ACTUALIZAR LOS DATOS EN MEMORIA
         await loadPatients();
-        
-        // ✅ RESTAURAR FILTROS DESPUÉS DE RECARGAR
-        restaurarFiltros();
-        
-        // Recargar el modal para mostrar el historial actualizado
-        showPatientModal(patientKey);
+        restaurarFiltros();           // Restaurar filtros del usuario
+        showPatientModal(patientKey); // Recargar modal
         
     } catch (error) {
-        console.error("Error al eliminar registro:", error);
+        console.error(error);
         alert("❌ Error al eliminar: " + error.message);
     } finally {
         if (loading) loading.style.display = 'none';
@@ -4358,14 +4410,37 @@ function cerrarModalRegistroLlamada() {
     if (modal) modal.style.display = 'none';
 }
 
-// Guardar registro de llamada
+
+// ====================== GUARDAR REGISTRO DE LLAMADA (VERSIÓN FINAL - MODAL FORZADO) ======================
+let isSubmittingLlamada = false;
+
 async function guardarRegistroLlamada() {
+    console.log("🚀 guardarRegistroLlamada() INICIADA");
+
     if (!currentModalPatient) {
         alert("❌ No hay paciente seleccionado");
         return;
     }
-    
-    // ✅ DEFINIR patientKey AQUÍ (antes de usarlo)
+
+    if (isSubmittingLlamada) {
+        console.log("⏳ Ya hay un guardado en progreso...");
+        return;
+    }
+
+    isSubmittingLlamada = true;
+
+    // === FORZAR VISIBILIDAD DEL MODAL ===
+    const loading = document.getElementById('loadingModal');
+    if (loading) {
+        loading.style.display = 'flex';
+        loading.style.zIndex = '99999';
+        loading.style.opacity = '1';
+        loading.style.visibility = 'visible';
+        console.log("✅ Modal FORZADO visible (z-index alto)");
+    } else {
+        console.error("❌ No se encontró el elemento #loadingModal");
+    }
+
     const patientKey = currentModalPatient.firebaseKey;
     
     const llamadaData = {
@@ -4381,34 +4456,24 @@ async function guardarRegistroLlamada() {
         timestamp: firebase.database.ServerValue.TIMESTAMP
     };
     
-    // Validaciones
-    if (!llamadaData.motivo) {
-        alert("❌ Selecciona un motivo de la llamada");
+    if (!llamadaData.motivo || !llamadaData.respuesta) {
+        alert("❌ Motivo y Respuesta son obligatorios");
+        isSubmittingLlamada = false;
+        if (loading) loading.style.display = 'none';
         return;
     }
-    if (!llamadaData.respuesta) {
-        alert("❌ Selecciona la respuesta del paciente");
-        return;
-    }
-    
-    const loading = document.getElementById('loadingModal');
-    if (loading) loading.style.display = 'flex';
-    
+
+    guardarFiltrosEnStorage();
+
     try {
-        // 1. Guardar en historial de llamadas
         await db.ref(`patients/${patientKey}/historialLlamadas`).push(llamadaData);
         
-        // 2. Actualizar fecha de próximo llamado en el paciente
         if (llamadaData.proximoLlamado) {
-            await db.ref(`patients/${patientKey}`).update({
-                fechaProximoLlamado: llamadaData.proximoLlamado
-            });
+            await db.ref(`patients/${patientKey}`).update({ fechaProximoLlamado: llamadaData.proximoLlamado });
         } else {
-            // Si no hay nueva fecha, eliminar la alerta
             await db.ref(`patients/${patientKey}/fechaProximoLlamado`).remove();
         }
         
-        // 3. Registrar en historial general del paciente
         await db.ref(`patients/${patientKey}/historial`).push({
             fecha: new Date().toISOString(),
             usuario: currentUser ? currentUser.email : 'Sistema',
@@ -4419,20 +4484,23 @@ async function guardarRegistroLlamada() {
         alert("✅ Registro de llamada guardado correctamente");
         cerrarModalRegistroLlamada();
         
-        // Actualizar paciente y dashboard
         await loadPatients();
-        
-        // ✅ Reabrir el modal del paciente con los datos actualizados
+        restaurarFiltros();
         showPatientModal(patientKey);
         
     } catch (error) {
         console.error(error);
         alert("❌ Error al guardar: " + error.message);
     } finally {
-        if (loading) loading.style.display = 'none';
+        isSubmittingLlamada = false;
+        const loadingClose = document.getElementById('loadingModal');
+        if (loadingClose) {
+            loadingClose.style.display = 'none';
+            loadingClose.style.zIndex = '';
+            console.log("✅ Modal cerrado");
+        }
     }
 }
-
 // Ver detalle de llamada en modal
 
 async function verDetalleLlamada(patientKey, llamadaKey) {
@@ -4750,93 +4818,102 @@ async function abrirModalEditarLlamada(patientKey, llamadaKey) {
     modal.style.display = 'flex';
 }
 
-// ====================== GUARDAR EDICIÓN DE LLAMADA (SIN HISTORIAL) ======================
+// ====================== GUARDAR EDICIÓN DE LLAMADA (MODAL ULTRA FORZADO) ======================
+let isEditingLlamada = false;
+
 async function guardarEdicionLlamada() {
     if (currentUserRole !== 'admin') {
         alert("❌ No tienes permisos para editar llamadas.");
         return;
     }
-    
+
+    if (isEditingLlamada) {
+        console.log("⏳ Edición de llamada ya en progreso...");
+        return;
+    }
+
+    isEditingLlamada = true;
+
     const patientKey = document.getElementById('editLlamadaPatientKey').value;
     const llamadaKey = document.getElementById('editLlamadaKey').value;
-    
+
     if (!patientKey || !llamadaKey) {
         alert("❌ Error: No se encontró la llamada a editar.");
+        isEditingLlamada = false;
         return;
     }
-    
-    // Validar campos requeridos
-    const motivo = document.getElementById('editLlamadaMotivo').value;
-    const respuesta = document.getElementById('editLlamadaRespuesta').value;
-    
-    if (!motivo) {
-        alert("❌ Selecciona un motivo de la llamada");
-        return;
-    }
-    if (!respuesta) {
-        alert("❌ Selecciona la respuesta del paciente");
-        return;
-    }
-    
-    const llamadaData = {
-        fechaLlamada: document.getElementById('editLlamadaFechaHora').value,
-        nombreRec: document.getElementById('editLlamadaNombreRec').value,
-        rutRec: document.getElementById('editLlamadaRutRec').value,
-        parentesco: document.getElementById('editLlamadaParentesco').value,
-        motivo: motivo,
-        respuesta: respuesta,
-        observaciones: document.getElementById('editLlamadaObservaciones').value,
-        proximoLlamado: document.getElementById('editLlamadaProximoLlamado').value,
-        editadoPor: currentUser ? currentUser.email : 'Sistema',
-        editadoEn: firebase.database.ServerValue.TIMESTAMP
-    };
-    
+
+    // === ULTRA FORZAR MODAL DE ESPERA ===
     const loading = document.getElementById('loadingModal');
-    if (loading) loading.style.display = 'flex';
-    
+    if (loading) {
+        loading.style.display = 'flex';
+        loading.style.zIndex = '999999';      // Aún más alto
+        loading.style.opacity = '1';
+        loading.style.visibility = 'visible';
+        loading.style.background = 'rgba(0,0,0,0.7)'; // Fondo más fuerte
+        console.log("✅ Modal de edición ULTRA FORZADO visible");
+    } else {
+        console.error("❌ No se encontró el elemento #loadingModal");
+    }
+
+    guardarFiltrosEnStorage();
+
     try {
-        // Actualizar directamente SIN crear historial
+        const llamadaData = {
+            fechaLlamada: document.getElementById('editLlamadaFechaHora').value,
+            nombreRec: document.getElementById('editLlamadaNombreRec').value,
+            rutRec: document.getElementById('editLlamadaRutRec').value,
+            parentesco: document.getElementById('editLlamadaParentesco').value,
+            motivo: document.getElementById('editLlamadaMotivo').value,
+            respuesta: document.getElementById('editLlamadaRespuesta').value,
+            observaciones: document.getElementById('editLlamadaObservaciones').value,
+            proximoLlamado: document.getElementById('editLlamadaProximoLlamado').value,
+            editadoPor: currentUser ? currentUser.email : 'Sistema',
+            editadoEn: firebase.database.ServerValue.TIMESTAMP
+        };
+
+        if (!llamadaData.motivo || !llamadaData.respuesta) {
+            alert("❌ Motivo y Respuesta son obligatorios");
+            return;
+        }
+
         await db.ref(`patients/${patientKey}/historialLlamadas/${llamadaKey}`).update(llamadaData);
-        
-        // Actualizar fecha de próximo llamado en el paciente si es necesario
+
         if (llamadaData.proximoLlamado) {
-            await db.ref(`patients/${patientKey}`).update({
-                fechaProximoLlamado: llamadaData.proximoLlamado
-            });
+            await db.ref(`patients/${patientKey}`).update({ fechaProximoLlamado: llamadaData.proximoLlamado });
         } else {
-            // Verificar si hay otras llamadas con próxima fecha
             const snapshot = await db.ref(`patients/${patientKey}/historialLlamadas`).once('value');
             let tieneProximo = false;
             if (snapshot.exists()) {
                 snapshot.forEach(child => {
                     const llamada = child.val();
-                    if (llamada.proximoLlamado && child.key !== llamadaKey) {
-                        tieneProximo = true;
-                    }
+                    if (llamada.proximoLlamado && child.key !== llamadaKey) tieneProximo = true;
                 });
             }
             if (!tieneProximo) {
                 await db.ref(`patients/${patientKey}/fechaProximoLlamado`).remove();
             }
         }
-        
-        alert("✅ Llamada actualizada correctamente (sin registro en historial)");
+
+        alert("✅ Llamada actualizada correctamente");
         cerrarModalEditarLlamada();
         
-        // Recargar datos
         await loadPatients();
-
-        // ✅ RESTAURAR FILTROS DESPUÉS DE RECARGAR
-restaurarFiltros();
-        
-        // Reabrir el modal del paciente
+        restaurarFiltros();
         showPatientModal(patientKey);
-        
+
     } catch (error) {
         console.error(error);
         alert("❌ Error al editar: " + error.message);
     } finally {
-        if (loading) loading.style.display = 'none';
+        isEditingLlamada = false;
+        const loadingClose = document.getElementById('loadingModal');
+        if (loadingClose) {
+            loadingClose.style.display = 'none';
+            loadingClose.style.zIndex = '';
+            loadingClose.style.background = '';
+            console.log("✅ Modal de edición cerrado");
+        }
     }
 }
 
@@ -4846,20 +4923,40 @@ function cerrarModalEditarLlamada() {
 }
 
 
-// ====================== ELIMINAR REGISTRO DE LLAMADA (SOLO ADMIN, SIN HISTORIAL) ======================
+// ====================== ELIMINAR REGISTRO DE LLAMADA (MODAL FORZADO) ======================
+let isDeletingLlamada = false;
+
 async function eliminarRegistroLlamada(patientKey, llamadaKey) {
     if (currentUserRole !== 'admin') {
         alert("❌ No tienes permisos para eliminar registros de llamadas.");
         return;
     }
     
+    if (isDeletingLlamada) {
+        console.log("⏳ Eliminación ya en progreso...");
+        return;
+    }
+
     if (!confirm("⚠️ ¿Estás seguro de eliminar este registro de llamada?\n\nEsta acción NO se registra en el historial y NO se puede deshacer.")) {
         return;
     }
-    
+
+    isDeletingLlamada = true;
+
+    // === FORZAR MODAL DE ESPERA ===
     const loading = document.getElementById('loadingModal');
-    if (loading) loading.style.display = 'flex';
-    
+    if (loading) {
+        loading.style.display = 'flex';
+        loading.style.zIndex = '999999';
+        loading.style.opacity = '1';
+        loading.style.visibility = 'visible';
+        console.log("✅ Modal de eliminación FORZADO visible");
+    } else {
+        console.error("❌ No se encontró el elemento #loadingModal");
+    }
+
+    guardarFiltrosEnStorage();
+
     try {
         // Obtener la llamada antes de eliminar para verificar próxima fecha
         const snapshot = await db.ref(`patients/${patientKey}/historialLlamadas/${llamadaKey}`).once('value');
@@ -4870,15 +4967,12 @@ async function eliminarRegistroLlamada(patientKey, llamadaKey) {
         
         // Si la llamada eliminada tenía una fecha de próximo llamado, verificar si actualizar
         if (llamada && llamada.proximoLlamado) {
-            // Buscar si hay otra llamada con fecha de próximo llamado
             const todasLlamadasSnap = await db.ref(`patients/${patientKey}/historialLlamadas`).once('value');
             let tieneProximo = false;
             if (todasLlamadasSnap.exists()) {
                 todasLlamadasSnap.forEach(child => {
                     const l = child.val();
-                    if (l.proximoLlamado) {
-                        tieneProximo = true;
-                    }
+                    if (l.proximoLlamado) tieneProximo = true;
                 });
             }
             if (!tieneProximo) {
@@ -4886,23 +4980,24 @@ async function eliminarRegistroLlamada(patientKey, llamadaKey) {
             }
         }
         
-        alert("✅ Registro de llamada eliminado correctamente (sin registro en historial)");
+        alert("✅ Registro de llamada eliminado correctamente");
         cerrarModalDetalleLlamada();
         
-        // Recargar datos
         await loadPatients();
-
-        // ✅ RESTAURAR FILTROS DESPUÉS DE RECARGAR
-restaurarFiltros();
-        
-        // Reabrir el modal del paciente
+        restaurarFiltros();
         showPatientModal(patientKey);
         
     } catch (error) {
         console.error(error);
         alert("❌ Error al eliminar: " + error.message);
     } finally {
-        if (loading) loading.style.display = 'none';
+        isDeletingLlamada = false;
+        const loadingClose = document.getElementById('loadingModal');
+        if (loadingClose) {
+            loadingClose.style.display = 'none';
+            loadingClose.style.zIndex = '';
+            console.log("✅ Modal de eliminación cerrado");
+        }
     }
 }
 
@@ -5755,7 +5850,9 @@ function toggleSinProgramacion() {
             btn.textContent = '📅 Sin Fecha Programación';
         }
     }
+    
     filterPatients();
+    guardarFiltrosEnStorage();
 }
 
 
@@ -5969,9 +6066,19 @@ async function eliminarRdll(key) {
     finally { if (loading) loading.style.display = 'none'; }
 }
 
-// Submit formulario RDLL
+// ====================== SUBMIT FORMULARIO RDLL ======================
+let isSubmittingRdll = false;   // ← Protección contra doble envío
+
 document.getElementById('formRdll')?.addEventListener('submit', async (e) => {
     e.preventDefault();
+
+    // === BLOQUEO CONTRA DOBLE CLIC ===
+    if (isSubmittingRdll) {
+        console.log("Envío RDLL ya en progreso...");
+        return;
+    }
+    isSubmittingRdll = true;
+
     const key = document.getElementById('rdll_key').value;
     
     function formatearFechaGuardar(val) {
@@ -6001,21 +6108,35 @@ document.getElementById('formRdll')?.addEventListener('submit', async (e) => {
         creadoPor: currentUser?.email || 'Sistema'
     };
     
-    if (!data.FECHA || !data.NOMBRE || !data.RUT || !data.DIAGNOSTICO || !data['MOTIVO LLAMADO'] || !data['RESPUESTA RECEPTOR']) {
+    if (!data.FECHA || !data.NOMBRE || !data.RUT || !data.DIAGNOSTICO || 
+        !data['MOTIVO LLAMADO'] || !data['RESPUESTA RECEPTOR']) {
         alert("❌ Complete los campos obligatorios");
+        isSubmittingRdll = false;
         return;
     }
     
     const loading = document.getElementById('loadingModal');
     if (loading) loading.style.display = 'flex';
+
     try {
-        if (key) await db.ref(`${RDLL_PATH}/${key}`).update(data);
-        else await db.ref(RDLL_PATH).push(data);
-        alert(key ? "✅ Registro actualizado" : "✅ Registro guardado");
+        if (key) {
+            await db.ref(`${RDLL_PATH}/${key}`).update(data);
+            alert("✅ Registro actualizado correctamente");
+        } else {
+            await db.ref(RDLL_PATH).push(data);
+            alert("✅ Registro guardado correctamente");
+        }
+
         cerrarModalRdllForm();
         await cargarRdll();
-    } catch (e) { alert("Error: " + e.message); }
-    finally { if (loading) loading.style.display = 'none'; }
+
+    } catch (e) {
+        console.error(e);
+        alert("Error al guardar: " + e.message);
+    } finally {
+        isSubmittingRdll = false;
+        if (loading) loading.style.display = 'none';
+    }
 });
 
 // Inicializar eventos y carga
@@ -6187,4 +6308,140 @@ function cambiarFuenteLista(fuente) {
     if (filtroPercentil) filterPatients();
     
     console.log(`Lista: Fuente cambiada a: ${fuente === 'fechaIndQx' ? 'Fecha Indicación Qx' : 'Fecha Estatus Programable'}`);
+
+    guardarFiltrosEnStorage();
+}
+
+
+
+// ====================== RESTAURACIÓN SEGURA Y DEFINITIVA ======================
+function restaurarFiltrosSeguro() {
+    if (!lastFilters) {
+        console.warn("⚠️ lastFilters no inicializado");
+        return;
+    }
+
+    // Usamos un delay mayor y verificamos que los elementos clave existan
+    setTimeout(() => {
+        // 1. Restaurar campos
+        const campos = ['busquedaGeneral', 'filterEspecialidad', 'filterMedico', 
+                       'filterEstatus', 'filterComuna', 'filterFechaDesde', 
+                       'filterFechaHasta', 'filterPercentil'];
+        
+        campos.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = lastFilters[id] || '';
+        });
+
+        // 2. Variables globales
+        soloSinFolio = !!lastFilters.soloSinFolio;
+        mostrarDuplicados = !!lastFilters.mostrarDuplicados;
+        soloSinProgramacion = !!lastFilters.soloSinProgramacion;
+        filtroPercentil = lastFilters.filtroPercentil || '';
+
+        fuentePercentilDashboard = lastFilters.fuentePercentilDashboard || 'fechaIndQx';
+        fuentePercentilLista = lastFilters.fuentePercentilLista || 'fechaIndQx';
+
+        // 3. Sincronizar UI
+        const radioInd = document.querySelector('input[name="fuentePercentilDashboard"][value="fechaIndQx"]');
+        const radioEst = document.querySelector('input[name="fuentePercentilDashboard"][value="fechaEstatusProgram"]');
+        const selectLista = document.getElementById('fuentePercentilLista');
+
+        if (radioInd) radioInd.checked = (fuentePercentilDashboard === 'fechaIndQx');
+        if (radioEst) radioEst.checked = (fuentePercentilDashboard === 'fechaEstatusProgram');
+        if (selectLista) selectLista.value = fuentePercentilLista;
+
+        // 4. Actualizar botones
+        actualizarBotonesFiltrosVisuales();
+
+        // 5. Aplicar filtros (con pequeño delay extra)
+        setTimeout(() => {
+            filterPatients();
+            console.log("✅ Filtros restaurados correctamente para este usuario");
+        }, 100);
+
+    }, 450);
+}
+
+// ====================== GESTIÓN DE FILTROS CON LOCALSTORAGE ======================
+
+let lastFilters = {
+    busquedaGeneral: '',
+    filterEspecialidad: '',
+    filterMedico: '',
+    filterEstatus: '',
+    filterComuna: '',
+    filterFechaDesde: '',
+    filterFechaHasta: '',
+    soloSinFolio: false,
+    mostrarDuplicados: false,
+    soloSinProgramacion: false,
+    filtroPercentil: '',
+    fuentePercentilDashboard: 'fechaIndQx',
+    fuentePercentilLista: 'fechaIndQx'
+};
+
+// Cargar filtros guardados desde localStorage
+function cargarFiltrosDesdeStorage() {
+    const saved = localStorage.getItem('prequirurgico_filtros');
+    if (saved) {
+        const parsed = JSON.parse(saved);
+        Object.assign(lastFilters, parsed);
+        
+        soloSinFolio = !!lastFilters.soloSinFolio;
+        mostrarDuplicados = !!lastFilters.mostrarDuplicados;
+        soloSinProgramacion = !!lastFilters.soloSinProgramacion;
+        filtroPercentil = lastFilters.filtroPercentil || '';
+        fuentePercentilDashboard = lastFilters.fuentePercentilDashboard || 'fechaIndQx';
+        fuentePercentilLista = lastFilters.fuentePercentilLista || 'fechaIndQx';
+    }
+}
+
+// Guardar filtros en localStorage
+function guardarFiltrosEnStorage() {
+    lastFilters = {
+        busquedaGeneral: document.getElementById('busquedaGeneral')?.value?.trim() || '',
+        filterEspecialidad: document.getElementById('filterEspecialidad')?.value || '',
+        filterMedico: document.getElementById('filterMedico')?.value || '',
+        filterEstatus: document.getElementById('filterEstatus')?.value || '',
+        filterComuna: document.getElementById('filterComuna')?.value || '',
+        filterFechaDesde: document.getElementById('filterFechaDesde')?.value || '',
+        filterFechaHasta: document.getElementById('filterFechaHasta')?.value || '',
+        soloSinFolio: !!soloSinFolio,
+        mostrarDuplicados: !!mostrarDuplicados,
+        soloSinProgramacion: !!soloSinProgramacion,
+        filtroPercentil: filtroPercentil || '',
+        fuentePercentilDashboard: fuentePercentilDashboard || 'fechaIndQx',
+        fuentePercentilLista: fuentePercentilLista || 'fechaIndQx'
+    };
+    localStorage.setItem('prequirurgico_filtros', JSON.stringify(lastFilters));
+}
+
+// Restaurar filtros (usada por todos los usuarios)
+function restaurarFiltros() {
+    cargarFiltrosDesdeStorage();
+
+    setTimeout(() => {
+        const campos = ['busquedaGeneral', 'filterEspecialidad', 'filterMedico', 'filterEstatus',
+                       'filterComuna', 'filterFechaDesde', 'filterFechaHasta', 'filterPercentil'];
+
+        campos.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = lastFilters[id] || '';
+        });
+
+        // Sincronizar controles visuales
+        const radioInd = document.querySelector('input[name="fuentePercentilDashboard"][value="fechaIndQx"]');
+        const radioEst = document.querySelector('input[name="fuentePercentilDashboard"][value="fechaEstatusProgram"]');
+        const selectLista = document.getElementById('fuentePercentilLista');
+
+        if (radioInd) radioInd.checked = (fuentePercentilDashboard === 'fechaIndQx');
+        if (radioEst) radioEst.checked = (fuentePercentilDashboard === 'fechaEstatusProgram');
+        if (selectLista) selectLista.value = fuentePercentilLista;
+
+        actualizarBotonesFiltrosVisuales();
+        filterPatients();
+
+        console.log("✅ Filtros restaurados desde localStorage");
+    }, 400);
 }
