@@ -35,6 +35,7 @@ let currentUser = null;
 let patients = [];
 let currentPatientKey = null;
 let currentModalPatient = null;
+let ocultarNoGestionables = false;
 
 // Especialistas
 const especialistas = {
@@ -1464,6 +1465,7 @@ function filterPatients() {
     const especialidad = document.getElementById('filterEspecialidad').value;
     const medico = document.getElementById('filterMedico').value;
     const estatus = document.getElementById('filterEstatus').value;
+     const prioridad = document.getElementById('filterPrioridad')?.value || '';
     const comuna = document.getElementById('filterComuna')?.value || '';
     const fechaDesde = document.getElementById('filterFechaDesde').value;
     const fechaHasta = document.getElementById('filterFechaHasta').value;
@@ -1486,6 +1488,7 @@ function filterPatients() {
         if (especialidad && p.especialidad !== especialidad) pasa = false;
         if (medico && p.medicoTratante !== medico) pasa = false;
         if (estatus && p.estatusTabla !== estatus) pasa = false;
+        if (prioridad && p.prioridad !== prioridad) pasa = false;
         if (comuna && p.comuna !== comuna) pasa = false;
 
         if (fechaDesde || fechaHasta) {
@@ -1503,6 +1506,19 @@ function filterPatients() {
             const fechaEstatusProgram = p.fechaEstatusProgram || '';
             if (fechaEstatusProgram.trim() !== '') pasa = false;
         }
+
+if (ocultarNoGestionables) {
+            const noGestionables = ["EGRESO", "RECHAZO", "TRASLADO INTERNO", "OPERADO", "egreso", "rechazo", "traslado interno", "operado"];
+            const estatusPaciente = (p.estatusTabla || '').toString().trim().toUpperCase();
+            if (noGestionables.includes(estatusPaciente)) {
+                pasa = false;
+            }
+        }
+
+
+
+
+
 
     // Filtrar por percentil
 if (filtroPercentil) {
@@ -1639,21 +1655,45 @@ function toggleDuplicados() {
     guardarFiltrosEnStorage();
 }
 
+
+function toggleNoGestionables() {
+    ocultarNoGestionables = !ocultarNoGestionables;
+    const btn = document.getElementById('btnNoGestionables');
+    
+    if (btn) {
+        if (ocultarNoGestionables) {
+            btn.style.background = '#dc2626';
+            btn.style.color = 'white';
+            btn.textContent = '✅ Ocultando No Gestionables';
+        } else {
+            btn.style.background = '#64748b';
+            btn.style.color = 'white';
+            btn.textContent = '🚫 Ocultar No Gestionables';
+        }
+    }
+    
+    filterPatients();
+    guardarFiltrosEnStorage();
+}
+
 // ====================== LIMPIAR FILTROS ======================
 function clearFilters() {
     soloSinFolio = false;
     mostrarDuplicados = false;
+    ocultarNoGestionables = false;
 
     document.getElementById('busquedaGeneral').value = '';
     document.getElementById('filterEspecialidad').value = '';
     document.getElementById('filterMedico').value = '';
     document.getElementById('filterEstatus').value = '';
+    document.getElementById('filterPrioridad').value = '';
     document.getElementById('filterComuna').value = '';
     document.getElementById('filterFechaDesde').value = '';
     document.getElementById('filterFechaHasta').value = '';
 
     const btnSinFolio = document.getElementById('btnSinFolio');
     const btnDuplicados = document.getElementById('btnDuplicados');
+    const btnNoGestionables = document.getElementById('btnNoGestionables');
     
     if (btnSinFolio) {
         btnSinFolio.style.background = '';
@@ -1666,7 +1706,13 @@ function clearFilters() {
         btnDuplicados.textContent = 'Mostrar Duplicados (RUT)';
     }
 
-    // Dentro de obtenerPacientesFiltrados(), después de la condición de soloSinFolio, agregar:
+    if (btnNoGestionables) {
+        btnNoGestionables.style.background = '#64748b';
+        btnNoGestionables.style.color = 'white';
+        btnNoGestionables.textContent = '🚫 Ocultar No Gestionables';
+    }
+
+
      if (typeof soloSinProgramacion !== 'undefined' && soloSinProgramacion) {
     filtered = filtered.filter(p => {
         const fechaEstatusProgram = (p.fechaEstatusProgram || '').toString().trim();
@@ -1953,6 +1999,7 @@ function getCurrentFilteredData() {
     const especialidad = document.getElementById('filterEspecialidad').value;
     const medico = document.getElementById('filterMedico').value;
     const estatus = document.getElementById('filterEstatus').value;
+    const prioridad = document.getElementById('filterPrioridad')?.value || '';
     const fechaDesde = document.getElementById('filterFechaDesde').value;
     const fechaHasta = document.getElementById('filterFechaHasta').value;
 
@@ -1966,6 +2013,7 @@ function getCurrentFilteredData() {
         if (especialidad && p.especialidad !== especialidad) pasa = false;
         if (medico && p.medicoTratante !== medico) pasa = false;
         if (estatus && p.estatusTabla !== estatus) pasa = false;
+        if (prioridad && p.prioridad !== prioridad) pasa = false;
 
         if (fechaDesde || fechaHasta) {
             const fechaInd = new Date(p.fechaIndQx || 0);
@@ -1976,6 +2024,15 @@ function getCurrentFilteredData() {
             const folio = (p.folio || '').toString().trim();
             if (folio !== '') pasa = false;
         }
+
+        if (ocultarNoGestionables) {
+            const noGestionables = ["EGRESO", "RECHAZO", "TRASLADO INTERNO", "OPERADO", "egreso", "rechazo", "traslado interno", "operado"];
+            const estatusPaciente = (p.estatusTabla || '').toString().trim().toUpperCase();
+            if (noGestionables.includes(estatusPaciente)) {
+                pasa = false;
+            }
+        }
+
         return pasa;
     });
 }
@@ -2664,6 +2721,20 @@ function actualizarBotonesFiltrosVisuales() {
             btnSinProgramacion.style.background = '';
             btnSinProgramacion.style.color = '';
             btnSinProgramacion.textContent = '📅 Sin Fecha Prog';
+        }
+    }
+
+    // No Gestionables 
+ const btnNoGestionables = document.getElementById('btnNoGestionables');
+    if (btnNoGestionables) {
+        if (ocultarNoGestionables) {
+            btnNoGestionables.style.background = '#dc2626';
+            btnNoGestionables.style.color = 'white';
+            btnNoGestionables.textContent = '✅ Ocultando No Gestionables';
+        } else {
+            btnNoGestionables.style.background = '#64748b';
+            btnNoGestionables.style.color = 'white';
+            btnNoGestionables.textContent = '🚫 Ocultar No Gestionables';
         }
     }
 }
@@ -3601,6 +3672,7 @@ function printPatientList() {
     const especialidad = document.getElementById('filterEspecialidad').value;
     const medico = document.getElementById('filterMedico').value;
     const estatus = document.getElementById('filterEstatus').value;
+      const prioridad = document.getElementById('filterPrioridad')?.value || '';
     const comuna = document.getElementById('filterComuna')?.value || '';
     const fechaDesde = document.getElementById('filterFechaDesde').value;
     const fechaHasta = document.getElementById('filterFechaHasta').value;
@@ -3615,6 +3687,7 @@ function printPatientList() {
         if (especialidad && p.especialidad !== especialidad) pasa = false;
         if (medico && p.medicoTratante !== medico) pasa = false;
         if (estatus && p.estatusTabla !== estatus) pasa = false;
+        if (prioridad && p.prioridad !== prioridad) pasa = false;
         if (comuna && p.comuna !== comuna) pasa = false;
         if (fechaDesde || fechaHasta) {
             const fechaInd = new Date(p.fechaIndQx || 0);
@@ -3624,6 +3697,14 @@ function printPatientList() {
         if (soloSinFolio) {
             const folio = (p.folio || '').toString().trim();
             if (folio !== '') pasa = false;
+        }
+
+        if (ocultarNoGestionables) {
+            const noGestionables = ["EGRESO", "RECHAZO", "TRASLADO INTERNO", "OPERADO", "egreso", "rechazo", "traslado interno", "operado"];
+            const estatusPaciente = (p.estatusTabla || '').toString().trim().toUpperCase();
+            if (noGestionables.includes(estatusPaciente)) {
+                pasa = false;
+            }
         }
         return pasa;
     });
@@ -5465,6 +5546,7 @@ function obtenerPacientesFiltrados() {
     const especialidad = document.getElementById('filterEspecialidad')?.value || '';
     const medico = document.getElementById('filterMedico')?.value || '';
     const estatus = document.getElementById('filterEstatus')?.value || '';
+     const prioridad = document.getElementById('filterPrioridad')?.value || '';
     const comuna = document.getElementById('filterComuna')?.value || '';
     const fechaDesde = document.getElementById('filterFechaDesde')?.value || '';
     const fechaHasta = document.getElementById('filterFechaHasta')?.value || '';
@@ -5488,6 +5570,10 @@ function obtenerPacientesFiltrados() {
     
     if (estatus) {
         filtered = filtered.filter(p => p.estatusTabla === estatus);
+    }
+
+    if (prioridad) {  
+        filtered = filtered.filter(p => p.prioridad === prioridad);
     }
     
     if (comuna) {
@@ -5519,6 +5605,14 @@ function obtenerPacientesFiltrados() {
         filtered = filtered.filter(p => p.rut && rutCount[p.rut] > 1);
     }
     
+    if (ocultarNoGestionables) {
+        const noGestionables = ["EGRESO", "RECHAZO", "TRASLADO INTERNO", "OPERADO", "egreso", "rechazo", "traslado interno", "operado"];
+        filtered = filtered.filter(p => {
+            const estatusPaciente = (p.estatusTabla || '').toString().trim().toUpperCase();
+            return !noGestionables.includes(estatusPaciente);
+        });
+    }
+
     return filtered;
 }
 
@@ -6370,12 +6464,14 @@ let lastFilters = {
     filterEspecialidad: '',
     filterMedico: '',
     filterEstatus: '',
+    filterPrioridad: '',
     filterComuna: '',
     filterFechaDesde: '',
     filterFechaHasta: '',
     soloSinFolio: false,
     mostrarDuplicados: false,
     soloSinProgramacion: false,
+    ocultarNoGestionables: false, 
     filtroPercentil: '',
     fuentePercentilDashboard: 'fechaIndQx',
     fuentePercentilLista: 'fechaIndQx'
@@ -6391,6 +6487,7 @@ function cargarFiltrosDesdeStorage() {
         soloSinFolio = !!lastFilters.soloSinFolio;
         mostrarDuplicados = !!lastFilters.mostrarDuplicados;
         soloSinProgramacion = !!lastFilters.soloSinProgramacion;
+         ocultarNoGestionables = !!lastFilters.ocultarNoGestionables;
         filtroPercentil = lastFilters.filtroPercentil || '';
         fuentePercentilDashboard = lastFilters.fuentePercentilDashboard || 'fechaIndQx';
         fuentePercentilLista = lastFilters.fuentePercentilLista || 'fechaIndQx';
@@ -6404,12 +6501,14 @@ function guardarFiltrosEnStorage() {
         filterEspecialidad: document.getElementById('filterEspecialidad')?.value || '',
         filterMedico: document.getElementById('filterMedico')?.value || '',
         filterEstatus: document.getElementById('filterEstatus')?.value || '',
+        filterPrioridad: document.getElementById('filterPrioridad')?.value || '',
         filterComuna: document.getElementById('filterComuna')?.value || '',
         filterFechaDesde: document.getElementById('filterFechaDesde')?.value || '',
         filterFechaHasta: document.getElementById('filterFechaHasta')?.value || '',
         soloSinFolio: !!soloSinFolio,
         mostrarDuplicados: !!mostrarDuplicados,
         soloSinProgramacion: !!soloSinProgramacion,
+        ocultarNoGestionables: !!ocultarNoGestionables,
         filtroPercentil: filtroPercentil || '',
         fuentePercentilDashboard: fuentePercentilDashboard || 'fechaIndQx',
         fuentePercentilLista: fuentePercentilLista || 'fechaIndQx'
@@ -6422,7 +6521,7 @@ function restaurarFiltros() {
     cargarFiltrosDesdeStorage();
 
     setTimeout(() => {
-        const campos = ['busquedaGeneral', 'filterEspecialidad', 'filterMedico', 'filterEstatus',
+        const campos = ['busquedaGeneral', 'filterEspecialidad', 'filterMedico', 'filterEstatus', 'filterPrioridad',
                        'filterComuna', 'filterFechaDesde', 'filterFechaHasta', 'filterPercentil'];
 
         campos.forEach(id => {
@@ -6445,3 +6544,4 @@ function restaurarFiltros() {
         console.log("✅ Filtros restaurados desde localStorage");
     }, 400);
 }
+
