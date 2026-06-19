@@ -484,12 +484,24 @@
                         <label>Estatus Tabla</label>
                         <select id="filterEstatus" onchange="filterPatients()"></select>
                     </div>
+
+
+                    <div class="filter-group">
+    <label>Prioridad</label>
+    <select id="filterPrioridad" onchange="filterPatients()">
+        <option value="">Todas las Prioridades</option>
+        <option value="P1">P1</option>
+        <option value="P2">P2</option>
+        <option value="P3">P3</option>
+    </select>
+</div>
                     <div class="filter-group">
                          <label>Comuna</label>
                          <select id="filterComuna" onchange="filterPatients()">
                          <option value="">Todas las Comunas</option>
                             </select>
                     </div>
+                    
                     <div class="filter-group">
     <label>Percentil</label>
     <select id="filterPercentil" onchange="filterPatients()">
@@ -523,6 +535,9 @@
                     <button onclick="toggleDuplicados()" id="btnDuplicados" class="btn-secondary">Duplicados (RUT)</button>
                     <button onclick="toggleSinFolio()" id="btnSinFolio" class="btn-secondary">Sin Folio</button>
                     <button onclick="toggleSinProgramacion()" id="btnSinProgramacion" class="btn-secondary">📅 Sin Fecha Prog</button>
+                    <button onclick="toggleNoGestionables()" id="btnNoGestionables" class="btn-secondary" style="background:#64748b; color:white;">
+    🚫 Ocultar No Gestionables
+</button>
                     
                     <button onclick="downloadCSV()" class="btn-secondary" style="background:#10b981; color:white;">📥 Descargar CSV</button>
                     <button onclick="downloadExcel()" class="btn-secondary" style="background:#2563eb; color:white;">📊 Descargar Excel</button>
