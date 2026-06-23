@@ -1904,6 +1904,7 @@ function clearFilters() {
 
     const btnSinFolio = document.getElementById('btnSinFolio');
     const btnDuplicados = document.getElementById('btnDuplicados');
+    const btnSinProgramacion = document.getElementById('btnSinProgramacion');
     const btnNoGestionables = document.getElementById('btnNoGestionables');
     
     if (btnSinFolio) {
@@ -1916,7 +1917,11 @@ function clearFilters() {
         btnDuplicados.style.color = '';
         btnDuplicados.textContent = 'Mostrar Duplicados (RUT)';
     }
-
+    if (btnSinProgramacion) {
+        btnSinProgramacion.style.background = '';
+        btnSinProgramacion.style.color = '';
+        btnSinProgramacion.textContent = '📅 Sin Fecha Programación';
+    }
     if (btnNoGestionables) {
         btnNoGestionables.style.background = '#64748b';
         btnNoGestionables.style.color = 'white';
