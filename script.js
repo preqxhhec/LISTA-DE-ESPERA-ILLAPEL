@@ -92,7 +92,7 @@ function filterMedicos() {
     }
 }
 
-// ====================== FORMATEO DE RUT CHILENO ======================
+
 // ====================== FORMATEO DE RUT CHILENO (VERSIÓN SEGURA) ======================
 function formatRut(rut) {
     if (!rut) return '';
@@ -119,18 +119,45 @@ function validarRut(rut) {
     return rut && rut.length >= 8;
 }
 
-//SEGMENTO 2 (Login / Register / Logout)
-
-// ====================== LOGIN / REGISTER ======================
-/*function showLogin() {
-    document.getElementById('loginSection').style.display = 'flex';
-    document.getElementById('registerSection').style.display = 'none';
+// ====================== VALIDACIÓN DE RUT CHILENO ======================
+function validarRutChileno(rut) {
+    if (!rut) return false;
+    
+    // Limpiar el RUT (eliminar puntos, guiones y espacios)
+    let rutLimpio = String(rut).replace(/[^0-9kK]/g, '').toUpperCase();
+    
+    // Verificar longitud mínima
+    if (rutLimpio.length < 7) return false;
+    
+    // Separar dígito verificador
+    const dv = rutLimpio.slice(-1);
+    const numero = rutLimpio.slice(0, -1);
+    
+    // Verificar que el número sea válido
+    if (!/^\d+$/.test(numero)) return false;
+    
+    // Calcular dígito verificador
+    let suma = 0;
+    let multiplo = 2;
+    
+    for (let i = numero.length - 1; i >= 0; i--) {
+        suma += parseInt(numero[i]) * multiplo;
+        multiplo = multiplo === 7 ? 2 : multiplo + 1;
+    }
+    
+    const resto = 11 - (suma % 11);
+    let dvCalculado;
+    
+    if (resto === 11) {
+        dvCalculado = '0';
+    } else if (resto === 10) {
+        dvCalculado = 'K';
+    } else {
+        dvCalculado = String(resto);
+    }
+    
+    return dv === dvCalculado;
 }
-
-function showRegister() {
-    document.getElementById('loginSection').style.display = 'none';
-    document.getElementById('registerSection').style.display = 'flex';
-}*/
 
 // Login Form
 document.getElementById('loginForm').addEventListener('submit', (e) => {
@@ -216,6 +243,26 @@ document.getElementById('patientForm').addEventListener('submit', async (e) => {
         console.log("Envío ya en progreso...");
         return;
     }
+
+    // ========== VALIDAR RUT ANTES DE MOSTRAR MODAL ==========
+    const rutInput = document.getElementById('rut').value;
+    
+    // PASO 1: Limpiar RUT (quitar puntos, guiones y espacios) para validar
+    const rutLimpio = rutInput ? rutInput.replace(/[^0-9kK]/g, '').toUpperCase() : '';
+
+    // PASO 2: Validar RUT limpio (debe ser obligatorio y válido)
+    if (!rutLimpio || !validarRutChileno(rutLimpio)) {
+        alert("❌ El RUT es obligatorio y debe ser válido.");
+        document.getElementById('rut').focus();
+        return;
+    }
+    
+    // PASO 3: Formatear RUT limpio (agregar puntos y guión) para guardar
+    const rutFormateado = formatRut(rutLimpio);
+
+  
+    // =========================================================
+
     isSubmitting = true;
 
     const loading = document.getElementById('loadingModal');
@@ -226,7 +273,7 @@ document.getElementById('patientForm').addEventListener('submit', async (e) => {
         estatusTabla: document.getElementById('estatusTabla').value,
         fechaIndQx: document.getElementById('fechaIndQx').value,
         nombreApellido: document.getElementById('nombreApellido').value.toUpperCase().trim(),
-        rut: formatRut(document.getElementById('rut').value),
+        rut: rutFormateado,
         fechaNac: document.getElementById('fechaNac').value,
         edad: parseInt(document.getElementById('edad').value) || 0,
         patologiasCronicas: document.getElementById('patologiasCronicas').value,
@@ -363,17 +410,42 @@ function loadPatients() {
             });
         });
 
+        // ========== NUEVO: Orden por defecto ==========
+        // Establecer ordenamiento por Fecha Indicación Qx descendente
+        sortActive = true;
+        currentSortColumn = 'fechaIndQx';
+        currentSortOrder = 'desc';
+        // =============================================
+
         renderPatientsTable(patients);
         updateDashboard();
         actualizarTablaLlamadosPendientes();
         cargarEspecialidadesEnFiltroDashboard();
 
-        setTimeout(makeTableSortable, 300);
+        // Primero hacer sortable (asigna eventos click)
+        setTimeout(() => {
+            makeTableSortable();
+            
+            // Forzar la flecha en la columna por defecto después de renderizar
+            const headers = document.querySelectorAll('#patientsTable th');
+            const columnKeys = ['id', 'estatusTabla', 'fechaIndQx', 'tEspera', 'esperaProgram', 'nombreApellido', 'rut', 'edad', 'especialidad'];
+            const fechaIndex = columnKeys.indexOf('fechaIndQx');
+            
+            // Limpiar todas las flechas primero
+            headers.forEach(h => {
+                h.textContent = h.textContent.replace(/ [↑↓]$/, '');
+            });
+            
+            // Agregar flecha descendente a Fecha Ind. Qx
+            if (fechaIndex !== -1 && headers[fechaIndex]) {
+                headers[fechaIndex].textContent += ' ↓';
+            }
+        }, 100);
 
         // Restauración definitiva usando localStorage
         setTimeout(() => {
             restaurarFiltros();
-        }, 500);
+        }, 300);
     });
 }
 
@@ -383,6 +455,7 @@ function loadPatients() {
 let currentCallPatient = null;  // Variable específica para llamadas
 let currentSortColumn = null;
 let currentSortOrder = 'asc';
+let sortActive = false;
 const RDLL_DB_PATH = 'rdll_historico';
 
 // Para el gráfico de tendencia
@@ -415,38 +488,56 @@ function renderPatientsTable(data) {
     const tbody = document.getElementById('tableBody');
     tbody.innerHTML = '';
 
-    // Si estamos mostrando duplicados, NO aplicar el ordenamiento por T. Espera
-    if (!mostrarDuplicados && !currentSortColumn) {
-        currentSortColumn = 'tEspera';
-        currentSortOrder = 'asc';
-    }
-
-    // Ordenamiento normal (solo si NO estamos en modo duplicados)
-    if (!mostrarDuplicados) {
+    // Si estamos mostrando duplicados, ordenar por RUT (sin importar el estado)
+    if (mostrarDuplicados) {
+        data.sort((a, b) => (a.rut || '').localeCompare(b.rut || ''));
+    } 
+    // SOLO ordenar si sortActive = true y hay una columna seleccionada
+    else if (sortActive && currentSortColumn) {
         data.sort((a, b) => {
             let valA, valB;
 
             switch(currentSortColumn) {
                 case 'tEspera':
-    if (fuentePercentilLista === 'fechaEstatusProgram') {
-        valA = calculateWaitingDays(a.fechaEstatusProgram);
-        valB = calculateWaitingDays(b.fechaEstatusProgram);
-    } else {
-        valA = calculateWaitingDays(a.fechaIndQx);
-        valB = calculateWaitingDays(b.fechaIndQx);
-    }
-    break;
+                    if (fuentePercentilLista === 'fechaEstatusProgram') {
+                        valA = calculateWaitingDays(a.fechaEstatusProgram);
+                        valB = calculateWaitingDays(b.fechaEstatusProgram);
+                    } else {
+                        valA = calculateWaitingDays(a.fechaIndQx);
+                        valB = calculateWaitingDays(b.fechaIndQx);
+                    }
+                    break;
                 case 'esperaProgram':
                     valA = calculateWaitingDays(a.fechaEstatusProgram);
                     valB = calculateWaitingDays(b.fechaEstatusProgram);
                     break;
-                case 'edad':
-                    valA = Number(a.edad) || 0;
-                    valB = Number(b.edad) || 0;
-                    break;
                 case 'fechaIndQx':
                     valA = new Date(a.fechaIndQx || 0);
                     valB = new Date(b.fechaIndQx || 0);
+                    break;
+                case 'edad':
+                    valA = parseInt(a.edad) || 0;
+                    valB = parseInt(b.edad) || 0;
+                    break;
+                case 'id':
+                    valA = (a.id || '').toString().toLowerCase();
+                    valB = (b.id || '').toString().toLowerCase();
+                    break;
+                case 'estatusTabla':
+                    valA = (a.estatusTabla || '').toString().toLowerCase();
+                    valB = (b.estatusTabla || '').toString().toLowerCase();
+                    break;
+                case 'nombreApellido':
+                    valA = (a.nombreApellido || '').toString().toLowerCase();
+                    valB = (b.nombreApellido || '').toString().toLowerCase();
+                    break;
+                case 'rut':
+                    valA = (a.rut || '').toString().toLowerCase();
+                    valB = (b.rut || '').toString().toLowerCase();
+                    break;
+                case 'especialidad':
+                    valA = (a.especialidad || '').toString().toLowerCase();
+                    valB = (b.especialidad || '').toString().toLowerCase();
                     break;
                 default:
                     valA = (a[currentSortColumn] || '').toString().toLowerCase();
@@ -458,15 +549,15 @@ function renderPatientsTable(data) {
             return 0;
         });
     }
+    // Si sortActive = false, NO se aplica ordenamiento (se mantiene el orden de Firebase)
 
     data.forEach((patient) => {
         const fechaFormateada = patient.fechaIndQx ? formatDate(patient.fechaIndQx) : '-';
         
-       
-      // Calcular días según la fuente seleccionada en la lista
-const diasEspera = fuentePercentilLista === 'fechaEstatusProgram' 
-    ? calculateWaitingDays(patient.fechaEstatusProgram) 
-    : calculateWaitingDays(patient.fechaIndQx);
+        // Calcular días según la fuente seleccionada en la lista
+        const diasEspera = fuentePercentilLista === 'fechaEstatusProgram' 
+            ? calculateWaitingDays(patient.fechaEstatusProgram) 
+            : calculateWaitingDays(patient.fechaIndQx);
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
@@ -486,7 +577,6 @@ const diasEspera = fuentePercentilLista === 'fechaEstatusProgram'
         tbody.appendChild(tr);
     });
 }
-
 // ====================== FUNCIÓN PARA FORMATEAR FECHA DD/MM/AAAA ======================
 // ====================== FORMATEO DE FECHA CORREGIDO (ZONA HORARIA) ======================
 function formatDate(dateString) {
@@ -549,30 +639,87 @@ function formatDate(dateString) {
 // ====================== HACER ENCABEZADOS CLICABLES ======================
 function makeTableSortable() {
     const headers = document.querySelectorAll('#patientsTable th');
-    const columnKeys = ['id', 'estatusTabla', 'tEspera', 'esperaProgram', 'nombreApellido', 'rut', 'edad', 'especialidad'];
+    
+    // Definir qué columnas pueden ordenarse
+    const columnKeys = ['id', 'estatusTabla', 'fechaIndQx', 'tEspera', 'esperaProgram', 'nombreApellido', 'rut', 'edad', 'especialidad'];
+    const sortableColumns = ['fechaIndQx', 'tEspera', 'esperaProgram', 'edad'];
+
+    // ========== FUNCIÓN PARA ACTUALIZAR LAS FLECHAS ==========
+    function actualizarFlechas() {
+        // Limpiar TODAS las flechas
+        headers.forEach(h => {
+            h.textContent = h.textContent.replace(/ [↑↓]$/, '');
+        });
+        
+        // Si hay una columna activa, mostrar su flecha
+        if (sortActive && currentSortColumn) {
+            const index = columnKeys.indexOf(currentSortColumn);
+            if (index !== -1 && headers[index]) {
+                const flecha = currentSortOrder === 'asc' ? ' ↑' : ' ↓';
+                headers[index].textContent += flecha;
+            }
+        }
+    }
+    // =========================================================
+
+    // Limpiar flechas al inicio
+    actualizarFlechas();
 
     headers.forEach((th, index) => {
         const column = columnKeys[index];
         if (!column) return;
 
+        // Si la columna NO está en sortableColumns, NO agregar evento click
+        if (!sortableColumns.includes(column)) {
+            th.style.cursor = 'default';
+            return;
+        }
+
         th.style.cursor = 'pointer';
-        th.addEventListener('click', () => {
+        th.onclick = function() {
+            // Si es la misma columna
             if (currentSortColumn === column) {
-                currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
+                if (currentSortOrder === 'asc') {
+                    // 1er clic: asc → 2do clic: desc
+                    currentSortOrder = 'desc';
+                    sortActive = true;
+                } else if (currentSortOrder === 'desc') {
+                    // 2do clic: desc → 3er clic
+                    // Si es la columna por defecto (fechaIndQx), cambiar a ASC
+                    if (column === 'fechaIndQx') {
+                        currentSortOrder = 'asc';
+                        sortActive = true;
+                    } else {
+                        // Si es otra columna, restaurar orden por defecto
+                        sortActive = true;
+                        currentSortColumn = 'fechaIndQx';
+                        currentSortOrder = 'desc';
+                    }
+                }
             } else {
+                // Nueva columna: siempre asc
                 currentSortColumn = column;
                 currentSortOrder = 'asc';
+                sortActive = true;
             }
 
             // Actualizar flechas
-            headers.forEach(h => h.textContent = h.textContent.replace(/ [↑↓]$/, ''));
-            th.textContent = th.textContent.replace(/ [↑↓]$/, '') + 
-                           (currentSortOrder === 'asc' ? ' ↑' : ' ↓');
-
+            actualizarFlechas();
             filterPatients();
-        });
+        };
     });
+
+    // ========== Marcar la columna por defecto (Fecha Ind. Qx) ==========
+    if (sortActive && currentSortColumn === 'fechaIndQx') {
+        const fechaIndex = columnKeys.indexOf('fechaIndQx');
+        if (fechaIndex !== -1 && headers[fechaIndex]) {
+            headers[fechaIndex].textContent = headers[fechaIndex].textContent.replace(/ [↑↓]$/, '');
+            headers[fechaIndex].textContent += ' ↓';
+        }
+    }
 }
+
+
 
 // ====================== ACTUALIZAR DASHBOARD COMPLETO ======================
 let especialidadChartInstance = null;
@@ -1097,6 +1244,45 @@ function editCurrentPatient() {
         }
     });
 
+    // ========== VALIDAR RUT AUTOMÁTICAMENTE AL CARGAR ==========
+    const rutInput = document.getElementById('rut');
+    if (rutInput && rutInput.value) {
+        // Limpiar mensajes anteriores
+        let msg = rutInput.nextElementSibling;
+        if (msg && msg.classList && msg.classList.contains('rut-msg')) {
+            msg.remove();
+        }
+        
+        // Validar el RUT
+        const rut = rutInput.value;
+        const rutLimpio = rut ? rut.replace(/[^0-9kK]/g, '').toUpperCase() : '';
+        
+        if (!rutLimpio || !validarRutChileno(rutLimpio)) {
+            rutInput.style.borderColor = '#ef4444';
+            rutInput.style.backgroundColor = '#fee2e2';
+            msg = document.createElement('small');
+            msg.className = 'rut-msg';
+            msg.style.color = '#ef4444';
+            msg.style.display = 'block';
+            msg.style.marginTop = '4px';
+            msg.textContent = '❌ RUT inválido';
+            rutInput.parentNode.appendChild(msg);
+        } else {
+            rutInput.style.borderColor = '#10b981';
+            rutInput.style.backgroundColor = '#ecfdf5';
+            msg = document.createElement('small');
+            msg.className = 'rut-msg';
+            msg.style.color = '#10b981';
+            msg.style.display = 'block';
+            msg.style.marginTop = '4px';
+            msg.textContent = '✅ RUT válido';
+            rutInput.parentNode.appendChild(msg);
+        }
+    }
+    // =========================================================
+
+
+
     // Actualizar médico según especialidad
     if (currentModalPatient.especialidad) {
         filterMedicos();
@@ -1374,6 +1560,7 @@ function cargarDesplegables() {
 document.addEventListener('DOMContentLoaded', () => {
     cargarDesplegables();
     cargarFiltrosLista();
+    setupRutValidation();
 });
 
 
@@ -1466,6 +1653,7 @@ function filterPatients() {
     const medico = document.getElementById('filterMedico').value;
     const estatus = document.getElementById('filterEstatus').value;
      const prioridad = document.getElementById('filterPrioridad')?.value || '';
+     const ges = document.getElementById('filterGes')?.value || ''; 
     const comuna = document.getElementById('filterComuna')?.value || '';
     const fechaDesde = document.getElementById('filterFechaDesde').value;
     const fechaHasta = document.getElementById('filterFechaHasta').value;
@@ -1489,6 +1677,7 @@ function filterPatients() {
         if (medico && p.medicoTratante !== medico) pasa = false;
         if (estatus && p.estatusTabla !== estatus) pasa = false;
         if (prioridad && p.prioridad !== prioridad) pasa = false;
+         if (ges && p.ges !== ges) pasa = false;
         if (comuna && p.comuna !== comuna) pasa = false;
 
         if (fechaDesde || fechaHasta) {
@@ -1543,6 +1732,8 @@ if (filtroPercentil) {
         pasa = false;
     }
 }
+
+
 
         return pasa;
     });
@@ -1681,15 +1872,35 @@ function clearFilters() {
     soloSinFolio = false;
     mostrarDuplicados = false;
     ocultarNoGestionables = false;
+    soloSinProgramacion = false;
+    filtroPercentil = '';
 
     document.getElementById('busquedaGeneral').value = '';
     document.getElementById('filterEspecialidad').value = '';
     document.getElementById('filterMedico').value = '';
     document.getElementById('filterEstatus').value = '';
     document.getElementById('filterPrioridad').value = '';
+    document.getElementById('filterGes').value = '';
     document.getElementById('filterComuna').value = '';
     document.getElementById('filterFechaDesde').value = '';
     document.getElementById('filterFechaHasta').value = '';
+    document.getElementById('filterPercentil').value = '';
+
+    fuentePercentilLista = 'fechaIndQx';
+    const selectFuente = document.getElementById('fuentePercentilLista');
+    if (selectFuente) {
+        selectFuente.value = 'fechaIndQx';
+        selectFuente.dispatchEvent(new Event('change'));  // Forzar actualización visual
+    }
+
+    // ========== Restablecer ordenamiento a orden por defecto ==========
+    sortActive = true;
+    currentSortColumn = 'fechaIndQx';
+    currentSortOrder = 'desc';
+    
+    // Actualizar las flechas de los encabezados
+    makeTableSortable();
+    // =================================================================
 
     const btnSinFolio = document.getElementById('btnSinFolio');
     const btnDuplicados = document.getElementById('btnDuplicados');
@@ -1712,28 +1923,19 @@ function clearFilters() {
         btnNoGestionables.textContent = '🚫 Ocultar No Gestionables';
     }
 
-
-     if (typeof soloSinProgramacion !== 'undefined' && soloSinProgramacion) {
-    filtered = filtered.filter(p => {
-        const fechaEstatusProgram = (p.fechaEstatusProgram || '').toString().trim();
-        return fechaEstatusProgram === '';
-    });
+    if (typeof soloSinProgramacion !== 'undefined' && soloSinProgramacion) {
+        filtered = filtered.filter(p => {
+            const fechaEstatusProgram = (p.fechaEstatusProgram || '').toString().trim();
+            return fechaEstatusProgram === '';
+        });
+    }
+    
+    filterPatients();
 }
-    renderPatientsTable(patients);
-    mostrarContadorResultados(patients.length);
-}
-
-// Llamar carga de filtros cuando se carga la página
-document.addEventListener('DOMContentLoaded', () => {
-    cargarDesplegables();   // del formulario
-    cargarFiltrosLista();   // de la lista
-});
 
 
 
-///////// imprimir/////
-// ====================== IMPRIMIR INFORME COMPLETO CON HISTORIAL ======================
-// ====================== IMPRIMIR INFORME COMPLETO CON HISTORIAL DETALLADO ======================
+
 // ====================== IMPRIMIR INFORME COMPLETO CON FECHAS FORMATEADAS ======================
 function printPatient() {
     if (!currentModalPatient) return;
@@ -2627,7 +2829,7 @@ editCurrentPatient = function() {
 
 
 
-// ====================== RESTAURAR FILTROS (VERSIÓN ROBUSTA) ======================
+
 // ====================== RESTAURAR FILTROS (VERSIÓN FINAL ROBUSTA) ======================
 function restaurarFiltros() {
     console.log("🔄 Restaurando filtros:", lastFilters);
@@ -2658,16 +2860,14 @@ function restaurarFiltros() {
         soloSinProgramacion = !!lastFilters.soloSinProgramacion;
         filtroPercentil = lastFilters.filtroPercentil || '';
 
-        fuentePercentilDashboard = lastFilters.fuentePercentilDashboard || 'fechaIndQx';
+       
         fuentePercentilLista = lastFilters.fuentePercentilLista || 'fechaIndQx';
 
         // 3. Sincronizar controles visuales
-        const radioIndQx = document.querySelector('input[name="fuentePercentilDashboard"][value="fechaIndQx"]');
-        const radioEstatus = document.querySelector('input[name="fuentePercentilDashboard"][value="fechaEstatusProgram"]');
+   
         const selectLista = document.getElementById('fuentePercentilLista');
 
-        if (radioIndQx) radioIndQx.checked = (fuentePercentilDashboard === 'fechaIndQx');
-        if (radioEstatus) radioEstatus.checked = (fuentePercentilDashboard === 'fechaEstatusProgram');
+  
         if (selectLista) selectLista.value = fuentePercentilLista;
 
         // 4. Actualizar botones visuales
@@ -2677,7 +2877,7 @@ function restaurarFiltros() {
         filterPatients();
 
         console.log("✅ Filtros restaurados correctamente");
-    }, 220); // Aumentado ligeramente para mayor estabilidad
+    }, 400); // Aumentado ligeramente para mayor estabilidad
 }
 
 // ====================== ACTUALIZAR BOTONES VISUALES ======================
@@ -4358,7 +4558,7 @@ function actualizarTablaLlamadosPendientes() {
     });
 }
 
-// Abrir modal para registrar llamada
+
 // Abrir modal para registrar llamada
 function abrirModalRegistroLlamada(patientKey) {
     const patient = patients.find(p => p.firebaseKey === patientKey);
@@ -4483,6 +4683,62 @@ function abrirModalRegistroLlamada(patientKey) {
     document.getElementById('llamadaObservaciones').value = '';
     document.getElementById('llamadaProximoLlamado').value = '';
     
+    // ========== VALIDACIÓN DE RUT DEL RECEPTOR EN TIEMPO REAL ==========
+    const rutRecInput = document.getElementById('llamadaRutRec');
+    if (rutRecInput) {
+        // Eliminar eventos anteriores para evitar duplicados
+        const newRutRecInput = rutRecInput.cloneNode(true);
+        rutRecInput.parentNode.replaceChild(newRutRecInput, rutRecInput);
+        
+        newRutRecInput.addEventListener('blur', function() {
+            const rut = this.value;
+            const rutLimpio = rut ? rut.replace(/[^0-9kK]/g, '').toUpperCase() : '';
+            
+            // Limpiar mensaje anterior
+            let msg = this.nextElementSibling;
+            if (msg && msg.classList && msg.classList.contains('rut-msg')) {
+                msg.remove();
+            }
+            
+            if (rut && !validarRutChileno(rutLimpio)) {
+                this.style.borderColor = '#ef4444';
+                this.style.backgroundColor = '#fee2e2';
+                msg = document.createElement('small');
+                msg.className = 'rut-msg';
+                msg.style.color = '#ef4444';
+                msg.style.display = 'block';
+                msg.style.marginTop = '4px';
+                msg.textContent = '❌ RUT inválido';
+                this.parentNode.appendChild(msg);
+            } else if (rut && validarRutChileno(rutLimpio)) {
+                this.style.borderColor = '#10b981';
+                this.style.backgroundColor = '#ecfdf5';
+                // Formatear el RUT
+                this.value = formatRut(rutLimpio);
+                msg = document.createElement('small');
+                msg.className = 'rut-msg';
+                msg.style.color = '#10b981';
+                msg.style.display = 'block';
+                msg.style.marginTop = '4px';
+                msg.textContent = '✅ RUT válido';
+                this.parentNode.appendChild(msg);
+            } else {
+                this.style.borderColor = '';
+                this.style.backgroundColor = '';
+            }
+        });
+        
+        newRutRecInput.addEventListener('input', function() {
+            this.style.borderColor = '';
+            this.style.backgroundColor = '';
+            const msg = this.nextElementSibling;
+            if (msg && msg.classList && msg.classList.contains('rut-msg')) {
+                msg.remove();
+            }
+        });
+    }
+    // ====================================================================
+    
     modal.style.display = 'flex';
 }
 
@@ -4524,18 +4780,43 @@ async function guardarRegistroLlamada() {
 
     const patientKey = currentModalPatient.firebaseKey;
     
-    const llamadaData = {
-        fechaLlamada: document.getElementById('llamadaFechaHora').value,
-        nombreRec: document.getElementById('llamadaNombreRec').value,
-        rutRec: document.getElementById('llamadaRutRec').value,
-        parentesco: document.getElementById('llamadaParentesco').value,
-        motivo: document.getElementById('llamadaMotivo').value,
-        respuesta: document.getElementById('llamadaRespuesta').value,
-        observaciones: document.getElementById('llamadaObservaciones').value,
-        proximoLlamado: document.getElementById('llamadaProximoLlamado').value,
-        registradoPor: currentUser ? currentUser.email : 'Sistema',
-        timestamp: firebase.database.ServerValue.TIMESTAMP
-    };
+
+// ========== FORMATEAR Y VALIDAR RUT DEL RECEPTOR ==========
+const rutReceptorInput = document.getElementById('llamadaRutRec');
+const rutReceptor = rutReceptorInput.value;
+
+// PASO 1: Limpiar RUT (quitar puntos, guiones y espacios) para validar
+const rutReceptorLimpio = rutReceptor ? rutReceptor.replace(/[^0-9kK]/g, '').toUpperCase() : '';
+
+// PASO 2: Validar RUT del receptor (opcional - solo si se ingresó)
+if (rutReceptorLimpio && !validarRutChileno(rutReceptorLimpio)) {
+    alert("❌ El RUT del receptor no es válido. Por favor verifica el formato.");
+    rutReceptorInput.focus();
+    isSubmittingLlamada = false;
+    if (loading) loading.style.display = 'none';
+    return;
+}
+
+// PASO 3: Formatear RUT (si se ingresó) y actualizar el campo visual
+const rutReceptorFormateado = rutReceptorLimpio ? formatRut(rutReceptorLimpio) : '';
+if (rutReceptorLimpio) {
+    rutReceptorInput.value = rutReceptorFormateado;  // ← Actualizar el campo visual
+}
+// ==========================================================
+
+
+const llamadaData = {
+    fechaLlamada: document.getElementById('llamadaFechaHora').value,
+    nombreRec: document.getElementById('llamadaNombreRec').value,
+    rutRec: rutReceptorFormateado,
+    parentesco: document.getElementById('llamadaParentesco').value,
+    motivo: document.getElementById('llamadaMotivo').value,
+    respuesta: document.getElementById('llamadaRespuesta').value,
+    observaciones: document.getElementById('llamadaObservaciones').value,
+    proximoLlamado: document.getElementById('llamadaProximoLlamado').value,
+    registradoPor: currentUser ? currentUser.email : 'Sistema',
+    timestamp: firebase.database.ServerValue.TIMESTAMP
+};
     
     if (!llamadaData.motivo || !llamadaData.respuesta) {
         alert("❌ Motivo y Respuesta son obligatorios");
@@ -4543,6 +4824,14 @@ async function guardarRegistroLlamada() {
         if (loading) loading.style.display = 'none';
         return;
     }
+
+    // ========== VALIDAR RUT DEL RECEPTOR (si se ingresó) ==========
+if (llamadaData.rutRec && !validarRutChileno(llamadaData.rutRec)) {
+    alert("❌ El RUT del receptor no es válido. Por favor verifica el formato.");
+    isSubmittingLlamada = false;
+    if (loading) loading.style.display = 'none';
+    return;
+}
 
     guardarFiltrosEnStorage();
 
@@ -4889,12 +5178,82 @@ async function abrirModalEditarLlamada(patientKey, llamadaKey) {
     document.getElementById('editLlamadaKey').value = llamadaKey;
     document.getElementById('editLlamadaFechaHora').value = fechaHoraValue;
     document.getElementById('editLlamadaNombreRec').value = llamada.nombreRec || '';
-    document.getElementById('editLlamadaRutRec').value = llamada.rutRec || '';
+    
+    // Formatear RUT al cargar
+    const rutRec = llamada.rutRec || '';
+    const rutRecLimpio = rutRec ? rutRec.replace(/[^0-9kK]/g, '').toUpperCase() : '';
+    const rutRecFormateado = rutRecLimpio ? formatRut(rutRecLimpio) : '';
+    document.getElementById('editLlamadaRutRec').value = rutRecFormateado;
+    
     document.getElementById('editLlamadaParentesco').value = llamada.parentesco || '';
     document.getElementById('editLlamadaMotivo').value = llamada.motivo || '';
     document.getElementById('editLlamadaRespuesta').value = llamada.respuesta || '';
     document.getElementById('editLlamadaObservaciones').value = llamada.observaciones || '';
     document.getElementById('editLlamadaProximoLlamado').value = fechaProximoValue;
+
+    // ========== VALIDAR RUT AUTOMÁTICAMENTE AL CARGAR ==========
+    const editRutInput = document.getElementById('editLlamadaRutRec');
+    if (editRutInput && editRutInput.value) {
+        const event = new Event('blur');
+        editRutInput.dispatchEvent(event);
+    }
+    // =========================================================
+    
+       // ========== VALIDACIÓN DE RUT DEL RECEPTOR EN TIEMPO REAL ==========
+    const editRutRecInput = document.getElementById('editLlamadaRutRec');
+    if (editRutRecInput) {
+        // Eliminar eventos anteriores para evitar duplicados
+        const newEditRutRecInput = editRutRecInput.cloneNode(true);
+        editRutRecInput.parentNode.replaceChild(newEditRutRecInput, editRutRecInput);
+        
+        newEditRutRecInput.addEventListener('blur', function() {
+            const rut = this.value;
+            const rutLimpio = rut ? rut.replace(/[^0-9kK]/g, '').toUpperCase() : '';
+            
+            // Limpiar mensaje anterior
+            let msg = this.nextElementSibling;
+            if (msg && msg.classList && msg.classList.contains('rut-msg')) {
+                msg.remove();
+            }
+            
+            if (rut && !validarRutChileno(rutLimpio)) {
+                this.style.borderColor = '#ef4444';
+                this.style.backgroundColor = '#fee2e2';
+                msg = document.createElement('small');
+                msg.className = 'rut-msg';
+                msg.style.color = '#ef4444';
+                msg.style.display = 'block';
+                msg.style.marginTop = '4px';
+                msg.textContent = '❌ RUT inválido';
+                this.parentNode.appendChild(msg);
+            } else if (rut && validarRutChileno(rutLimpio)) {
+                this.style.borderColor = '#10b981';
+                this.style.backgroundColor = '#ecfdf5';
+                // Formatear el RUT
+                this.value = formatRut(rutLimpio);
+                msg = document.createElement('small');
+                msg.className = 'rut-msg';
+                msg.style.color = '#10b981';
+                msg.style.display = 'block';
+                msg.style.marginTop = '4px';
+                msg.textContent = '✅ RUT válido';
+                this.parentNode.appendChild(msg);
+            } else {
+                this.style.borderColor = '';
+                this.style.backgroundColor = '';
+            }
+        });
+        
+        newEditRutRecInput.addEventListener('input', function() {
+            this.style.borderColor = '';
+            this.style.backgroundColor = '';
+            const msg = this.nextElementSibling;
+            if (msg && msg.classList && msg.classList.contains('rut-msg')) {
+                msg.remove();
+            }
+        });
+    }
+    // ====================================================================
     
     modal.style.display = 'flex';
 }
@@ -4940,24 +5299,52 @@ async function guardarEdicionLlamada() {
     guardarFiltrosEnStorage();
 
     try {
-        const llamadaData = {
-            fechaLlamada: document.getElementById('editLlamadaFechaHora').value,
-            nombreRec: document.getElementById('editLlamadaNombreRec').value,
-            rutRec: document.getElementById('editLlamadaRutRec').value,
-            parentesco: document.getElementById('editLlamadaParentesco').value,
-            motivo: document.getElementById('editLlamadaMotivo').value,
-            respuesta: document.getElementById('editLlamadaRespuesta').value,
-            observaciones: document.getElementById('editLlamadaObservaciones').value,
-            proximoLlamado: document.getElementById('editLlamadaProximoLlamado').value,
-            editadoPor: currentUser ? currentUser.email : 'Sistema',
-            editadoEn: firebase.database.ServerValue.TIMESTAMP
-        };
+// ========== FORMATEAR Y VALIDAR RUT DEL RECEPTOR ==========
+const rutReceptor = document.getElementById('editLlamadaRutRec').value;
+
+// PASO 1: Limpiar RUT (quitar puntos, guiones y espacios) para validar
+const rutReceptorLimpio = rutReceptor ? rutReceptor.replace(/[^0-9kK]/g, '').toUpperCase() : '';
+
+// PASO 2: Validar RUT del receptor (opcional - solo si se ingresó)
+if (rutReceptorLimpio && !validarRutChileno(rutReceptorLimpio)) {
+    alert("❌ El RUT del receptor no es válido. Por favor verifica el formato.");
+    document.getElementById('editLlamadaRutRec').focus();
+    isEditingLlamada = false;
+    if (loading) loading.style.display = 'none';
+    return;
+}
+
+// PASO 3: Formatear RUT (si se ingresó)
+const rutReceptorFormateado = rutReceptorLimpio ? formatRut(rutReceptorLimpio) : '';
+
+
+
+// ==========================================================
+
+const llamadaData = {
+    fechaLlamada: document.getElementById('editLlamadaFechaHora').value,
+    nombreRec: document.getElementById('editLlamadaNombreRec').value,
+    rutRec: rutReceptorFormateado,
+    parentesco: document.getElementById('editLlamadaParentesco').value,
+    motivo: document.getElementById('editLlamadaMotivo').value,
+    respuesta: document.getElementById('editLlamadaRespuesta').value,
+    observaciones: document.getElementById('editLlamadaObservaciones').value,
+    proximoLlamado: document.getElementById('editLlamadaProximoLlamado').value,
+    editadoPor: currentUser ? currentUser.email : 'Sistema',
+    editadoEn: firebase.database.ServerValue.TIMESTAMP
+};
 
         if (!llamadaData.motivo || !llamadaData.respuesta) {
             alert("❌ Motivo y Respuesta son obligatorios");
             return;
         }
 
+
+        // ========== VALIDAR RUT DEL RECEPTOR (si se ingresó) ==========
+if (llamadaData.rutRec && !validarRutChileno(llamadaData.rutRec)) {
+    alert("❌ El RUT del receptor no es válido. Por favor verifica el formato.");
+    return;
+}
         await db.ref(`patients/${patientKey}/historialLlamadas/${llamadaKey}`).update(llamadaData);
 
         if (llamadaData.proximoLlamado) {
@@ -6107,6 +6494,107 @@ function abrirNuevoRdll() {
     document.getElementById('rdll_fecha').value = new Date().toISOString().split('T')[0];
     if (currentUser) document.getElementById('rdll_funcionario').value = currentUser.email;
     document.getElementById('modalRdllForm').style.display = 'flex';
+
+    // ========== VALIDACIÓN EN TIEMPO REAL PARA RDLL ==========
+    // Validar RUT del paciente
+    const rutPaciente = document.getElementById('rdll_rut');
+    if (rutPaciente) {
+        const nuevoRutPaciente = rutPaciente.cloneNode(true);
+        rutPaciente.parentNode.replaceChild(nuevoRutPaciente, rutPaciente);
+        
+        nuevoRutPaciente.addEventListener('blur', function() {
+            const rut = this.value;
+            const rutLimpio = rut ? rut.replace(/[^0-9kK]/g, '').toUpperCase() : '';
+            
+            let msg = this.nextElementSibling;
+            if (msg && msg.classList && msg.classList.contains('rut-msg')) {
+                msg.remove();
+            }
+            
+            if (!rutLimpio || !validarRutChileno(rutLimpio)) {
+                this.style.borderColor = '#ef4444';
+                this.style.backgroundColor = '#fee2e2';
+                msg = document.createElement('small');
+                msg.className = 'rut-msg';
+                msg.style.color = '#ef4444';
+                msg.style.display = 'block';
+                msg.style.marginTop = '4px';
+                msg.textContent = '❌ RUT inválido';
+                this.parentNode.appendChild(msg);
+            } else {
+                this.style.borderColor = '#10b981';
+                this.style.backgroundColor = '#ecfdf5';
+                msg = document.createElement('small');
+                msg.className = 'rut-msg';
+                msg.style.color = '#10b981';
+                msg.style.display = 'block';
+                msg.style.marginTop = '4px';
+                msg.textContent = '✅ RUT válido';
+                this.parentNode.appendChild(msg);
+            }
+        });
+        
+        nuevoRutPaciente.addEventListener('input', function() {
+            this.style.borderColor = '';
+            this.style.backgroundColor = '';
+            const msg = this.nextElementSibling;
+            if (msg && msg.classList && msg.classList.contains('rut-msg')) {
+                msg.remove();
+            }
+        });
+    }
+    
+    // Validar RUT del receptor
+    const rutReceptor = document.getElementById('rdll_rut_receptor');
+    if (rutReceptor) {
+        const nuevoRutReceptor = rutReceptor.cloneNode(true);
+        rutReceptor.parentNode.replaceChild(nuevoRutReceptor, rutReceptor);
+        
+        nuevoRutReceptor.addEventListener('blur', function() {
+            const rut = this.value;
+            const rutLimpio = rut ? rut.replace(/[^0-9kK]/g, '').toUpperCase() : '';
+            
+            let msg = this.nextElementSibling;
+            if (msg && msg.classList && msg.classList.contains('rut-msg')) {
+                msg.remove();
+            }
+            
+            if (rut && !validarRutChileno(rutLimpio)) {
+                this.style.borderColor = '#ef4444';
+                this.style.backgroundColor = '#fee2e2';
+                msg = document.createElement('small');
+                msg.className = 'rut-msg';
+                msg.style.color = '#ef4444';
+                msg.style.display = 'block';
+                msg.style.marginTop = '4px';
+                msg.textContent = '❌ RUT inválido';
+                this.parentNode.appendChild(msg);
+            } else if (rut && validarRutChileno(rutLimpio)) {
+                this.style.borderColor = '#10b981';
+                this.style.backgroundColor = '#ecfdf5';
+                msg = document.createElement('small');
+                msg.className = 'rut-msg';
+                msg.style.color = '#10b981';
+                msg.style.display = 'block';
+                msg.style.marginTop = '4px';
+                msg.textContent = '✅ RUT válido';
+                this.parentNode.appendChild(msg);
+            } else {
+                this.style.borderColor = '';
+                this.style.backgroundColor = '';
+            }
+        });
+        
+        nuevoRutReceptor.addEventListener('input', function() {
+            this.style.borderColor = '';
+            this.style.backgroundColor = '';
+            const msg = this.nextElementSibling;
+            if (msg && msg.classList && msg.classList.contains('rut-msg')) {
+                msg.remove();
+            }
+        });
+    }
+    // =========================================================
 }
 
 function cerrarModalRdllForm() { document.getElementById('modalRdllForm').style.display = 'none'; }
@@ -6144,6 +6632,107 @@ async function abrirEditarRdll(key) {
     document.getElementById('rdll_proximo_llamado').value = proxVal;
     document.getElementById('rdll_funcionario').value = r.FUNCIONARIO || currentUser?.email || '';
     document.getElementById('modalRdllForm').style.display = 'flex';
+
+    // ========== VALIDACIÓN EN TIEMPO REAL PARA RDLL (EDITAR) ==========
+    // Validar RUT del paciente
+    const rutPaciente = document.getElementById('rdll_rut');
+    if (rutPaciente) {
+        const nuevoRutPaciente = rutPaciente.cloneNode(true);
+        rutPaciente.parentNode.replaceChild(nuevoRutPaciente, rutPaciente);
+        
+        nuevoRutPaciente.addEventListener('blur', function() {
+            const rut = this.value;
+            const rutLimpio = rut ? rut.replace(/[^0-9kK]/g, '').toUpperCase() : '';
+            
+            let msg = this.nextElementSibling;
+            if (msg && msg.classList && msg.classList.contains('rut-msg')) {
+                msg.remove();
+            }
+            
+            if (!rutLimpio || !validarRutChileno(rutLimpio)) {
+                this.style.borderColor = '#ef4444';
+                this.style.backgroundColor = '#fee2e2';
+                msg = document.createElement('small');
+                msg.className = 'rut-msg';
+                msg.style.color = '#ef4444';
+                msg.style.display = 'block';
+                msg.style.marginTop = '4px';
+                msg.textContent = '❌ RUT inválido';
+                this.parentNode.appendChild(msg);
+            } else {
+                this.style.borderColor = '#10b981';
+                this.style.backgroundColor = '#ecfdf5';
+                msg = document.createElement('small');
+                msg.className = 'rut-msg';
+                msg.style.color = '#10b981';
+                msg.style.display = 'block';
+                msg.style.marginTop = '4px';
+                msg.textContent = '✅ RUT válido';
+                this.parentNode.appendChild(msg);
+            }
+        });
+        
+        nuevoRutPaciente.addEventListener('input', function() {
+            this.style.borderColor = '';
+            this.style.backgroundColor = '';
+            const msg = this.nextElementSibling;
+            if (msg && msg.classList && msg.classList.contains('rut-msg')) {
+                msg.remove();
+            }
+        });
+    }
+    
+    // Validar RUT del receptor
+    const rutReceptor = document.getElementById('rdll_rut_receptor');
+    if (rutReceptor) {
+        const nuevoRutReceptor = rutReceptor.cloneNode(true);
+        rutReceptor.parentNode.replaceChild(nuevoRutReceptor, rutReceptor);
+        
+        nuevoRutReceptor.addEventListener('blur', function() {
+            const rut = this.value;
+            const rutLimpio = rut ? rut.replace(/[^0-9kK]/g, '').toUpperCase() : '';
+            
+            let msg = this.nextElementSibling;
+            if (msg && msg.classList && msg.classList.contains('rut-msg')) {
+                msg.remove();
+            }
+            
+            if (rut && !validarRutChileno(rutLimpio)) {
+                this.style.borderColor = '#ef4444';
+                this.style.backgroundColor = '#fee2e2';
+                msg = document.createElement('small');
+                msg.className = 'rut-msg';
+                msg.style.color = '#ef4444';
+                msg.style.display = 'block';
+                msg.style.marginTop = '4px';
+                msg.textContent = '❌ RUT inválido';
+                this.parentNode.appendChild(msg);
+            } else if (rut && validarRutChileno(rutLimpio)) {
+                this.style.borderColor = '#10b981';
+                this.style.backgroundColor = '#ecfdf5';
+                msg = document.createElement('small');
+                msg.className = 'rut-msg';
+                msg.style.color = '#10b981';
+                msg.style.display = 'block';
+                msg.style.marginTop = '4px';
+                msg.textContent = '✅ RUT válido';
+                this.parentNode.appendChild(msg);
+            } else {
+                this.style.borderColor = '';
+                this.style.backgroundColor = '';
+            }
+        });
+        
+        nuevoRutReceptor.addEventListener('input', function() {
+            this.style.borderColor = '';
+            this.style.backgroundColor = '';
+            const msg = this.nextElementSibling;
+            if (msg && msg.classList && msg.classList.contains('rut-msg')) {
+                msg.remove();
+            }
+        });
+    }
+    // =========================================================
 }
 
 async function eliminarRdll(key) {
@@ -6184,23 +6773,56 @@ document.getElementById('formRdll')?.addEventListener('submit', async (e) => {
         return val;
     }
     
-    const data = {
-        FECHA: formatearFechaGuardar(document.getElementById('rdll_fecha').value),
-        NOMBRE: document.getElementById('rdll_nombre').value.toUpperCase().trim(),
-        RUT: document.getElementById('rdll_rut').value,
-        DIAGNOSTICO: document.getElementById('rdll_diagnostico').value,
-        TELEFONO: document.getElementById('rdll_telefono').value,
-        'NOMBRE RECEPTOR': document.getElementById('rdll_nombre_receptor').value.toUpperCase().trim(),
-        'RUT RECEPTOR': document.getElementById('rdll_rut_receptor').value,
-        'PARENTESCO RECEPTOR': document.getElementById('rdll_parentesco').value.toUpperCase().trim(),
-        'MOTIVO LLAMADO': document.getElementById('rdll_motivo').value,
-        'RESPUESTA RECEPTOR': document.getElementById('rdll_respuesta').value,
-        OBSERVACIONES: document.getElementById('rdll_observaciones').value,
-        'FECHA PROXIMO LLAMADO': formatearFechaGuardar(document.getElementById('rdll_proximo_llamado').value),
-        FUNCIONARIO: document.getElementById('rdll_funcionario').value || currentUser?.email,
-        timestamp: firebase.database.ServerValue.TIMESTAMP,
-        creadoPor: currentUser?.email || 'Sistema'
-    };
+// ========== FORMATEAR Y VALIDAR RUTS ==========
+const rutPaciente = document.getElementById('rdll_rut').value;
+const rutReceptor = document.getElementById('rdll_rut_receptor').value;
+
+// PASO 1: Limpiar RUTs (quitar puntos, guiones y espacios) para validar
+const rutPacienteLimpio = rutPaciente ? rutPaciente.replace(/[^0-9kK]/g, '').toUpperCase() : '';
+const rutReceptorLimpio = rutReceptor ? rutReceptor.replace(/[^0-9kK]/g, '').toUpperCase() : '';
+
+// PASO 2: Validar RUT del paciente (obligatorio)
+if (!rutPacienteLimpio || !validarRutChileno(rutPacienteLimpio)) {
+    alert("❌ El RUT del paciente es obligatorio y debe ser válido.");
+    document.getElementById('rdll_rut').focus();
+    isSubmittingRdll = false;
+    if (loading) loading.style.display = 'none';
+    return;
+}
+
+// PASO 3: Validar RUT del receptor (opcional - solo si se ingresó)
+if (rutReceptorLimpio && !validarRutChileno(rutReceptorLimpio)) {
+    alert("❌ El RUT del receptor no es válido. Por favor verifica el formato.");
+    document.getElementById('rdll_rut_receptor').focus();
+    isSubmittingRdll = false;
+    if (loading) loading.style.display = 'none';
+    return;
+}
+
+// PASO 4: Formatear RUTs
+const rutPacienteFormateado = formatRut(rutPacienteLimpio);
+const rutReceptorFormateado = rutReceptorLimpio ? formatRut(rutReceptorLimpio) : '';
+
+
+// =============================================
+
+const data = {
+    FECHA: formatearFechaGuardar(document.getElementById('rdll_fecha').value),
+    NOMBRE: document.getElementById('rdll_nombre').value.toUpperCase().trim(),
+    RUT: rutPacienteFormateado,
+    DIAGNOSTICO: document.getElementById('rdll_diagnostico').value,
+    TELEFONO: document.getElementById('rdll_telefono').value,
+    'NOMBRE RECEPTOR': document.getElementById('rdll_nombre_receptor').value.toUpperCase().trim(),
+    'RUT RECEPTOR': rutReceptorFormateado,
+    'PARENTESCO RECEPTOR': document.getElementById('rdll_parentesco').value.toUpperCase().trim(),
+    'MOTIVO LLAMADO': document.getElementById('rdll_motivo').value,
+    'RESPUESTA RECEPTOR': document.getElementById('rdll_respuesta').value,
+    OBSERVACIONES: document.getElementById('rdll_observaciones').value,
+    'FECHA PROXIMO LLAMADO': formatearFechaGuardar(document.getElementById('rdll_proximo_llamado').value),
+    FUNCIONARIO: document.getElementById('rdll_funcionario').value || currentUser?.email,
+    timestamp: firebase.database.ServerValue.TIMESTAMP,
+    creadoPor: currentUser?.email || 'Sistema'
+};
     
     if (!data.FECHA || !data.NOMBRE || !data.RUT || !data.DIAGNOSTICO || 
         !data['MOTIVO LLAMADO'] || !data['RESPUESTA RECEPTOR']) {
@@ -6208,6 +6830,13 @@ document.getElementById('formRdll')?.addEventListener('submit', async (e) => {
         isSubmittingRdll = false;
         return;
     }
+
+    // ========== VALIDAR RUT ==========
+if (data.RUT && !validarRutChileno(data.RUT)) {
+    alert("❌ El RUT ingresado no es válido. Por favor verifica el formato.");
+    isSubmittingRdll = false;
+    return;
+}
     
     const loading = document.getElementById('loadingModal');
     if (loading) loading.style.display = 'flex';
@@ -6465,6 +7094,7 @@ let lastFilters = {
     filterMedico: '',
     filterEstatus: '',
     filterPrioridad: '',
+    filterGes: '',
     filterComuna: '',
     filterFechaDesde: '',
     filterFechaHasta: '',
@@ -6489,7 +7119,7 @@ function cargarFiltrosDesdeStorage() {
         soloSinProgramacion = !!lastFilters.soloSinProgramacion;
          ocultarNoGestionables = !!lastFilters.ocultarNoGestionables;
         filtroPercentil = lastFilters.filtroPercentil || '';
-        fuentePercentilDashboard = lastFilters.fuentePercentilDashboard || 'fechaIndQx';
+        
         fuentePercentilLista = lastFilters.fuentePercentilLista || 'fechaIndQx';
     }
 }
@@ -6502,6 +7132,7 @@ function guardarFiltrosEnStorage() {
         filterMedico: document.getElementById('filterMedico')?.value || '',
         filterEstatus: document.getElementById('filterEstatus')?.value || '',
         filterPrioridad: document.getElementById('filterPrioridad')?.value || '',
+         filterGes: document.getElementById('filterGes')?.value || '', 
         filterComuna: document.getElementById('filterComuna')?.value || '',
         filterFechaDesde: document.getElementById('filterFechaDesde')?.value || '',
         filterFechaHasta: document.getElementById('filterFechaHasta')?.value || '',
@@ -6510,7 +7141,7 @@ function guardarFiltrosEnStorage() {
         soloSinProgramacion: !!soloSinProgramacion,
         ocultarNoGestionables: !!ocultarNoGestionables,
         filtroPercentil: filtroPercentil || '',
-        fuentePercentilDashboard: fuentePercentilDashboard || 'fechaIndQx',
+      
         fuentePercentilLista: fuentePercentilLista || 'fechaIndQx'
     };
     localStorage.setItem('prequirurgico_filtros', JSON.stringify(lastFilters));
@@ -6521,7 +7152,7 @@ function restaurarFiltros() {
     cargarFiltrosDesdeStorage();
 
     setTimeout(() => {
-        const campos = ['busquedaGeneral', 'filterEspecialidad', 'filterMedico', 'filterEstatus', 'filterPrioridad',
+        const campos = ['busquedaGeneral', 'filterEspecialidad', 'filterMedico', 'filterEstatus', 'filterPrioridad', 'filterGes',
                        'filterComuna', 'filterFechaDesde', 'filterFechaHasta', 'filterPercentil'];
 
         campos.forEach(id => {
@@ -6545,3 +7176,74 @@ function restaurarFiltros() {
     }, 400);
 }
 
+
+// ====================== VALIDACIÓN DE RUT EN TIEMPO REAL ======================
+function setupRutValidation() {
+    // Validar RUT en el formulario de nuevo paciente
+    const rutInput = document.getElementById('rut');
+    if (rutInput) {
+        rutInput.addEventListener('blur', function() {
+            const rut = this.value;
+            if (rut && !validarRutChileno(rut)) {
+                this.style.borderColor = '#ef4444';
+                this.style.backgroundColor = '#fee2e2';
+                // Mostrar mensaje de error
+                let errorMsg = this.nextElementSibling;
+                if (!errorMsg || !errorMsg.classList.contains('rut-error')) {
+                    errorMsg = document.createElement('small');
+                    errorMsg.className = 'rut-error';
+                    errorMsg.style.color = '#ef4444';
+                    errorMsg.style.display = 'block';
+                    errorMsg.style.marginTop = '4px';
+                    errorMsg.textContent = '❌ RUT inválido. Verifica el formato.';
+                    this.parentNode.appendChild(errorMsg);
+                }
+            } else if (rut && validarRutChileno(rut)) {
+                // RUT válido - indicador verde
+                this.style.borderColor = '#10b981';
+                this.style.backgroundColor = '#ecfdf5';
+                // Limpiar mensaje de error si existe
+                const errorMsg = this.nextElementSibling;
+                if (errorMsg && errorMsg.classList && errorMsg.classList.contains('rut-error')) {
+                    errorMsg.remove();
+                }
+                // Mostrar indicador de válido
+                let validMsg = this.nextElementSibling;
+                if (!validMsg || !validMsg.classList.contains('rut-valid')) {
+                    validMsg = document.createElement('small');
+                    validMsg.className = 'rut-valid';
+                    validMsg.style.color = '#10b981';
+                    validMsg.style.display = 'block';
+                    validMsg.style.marginTop = '4px';
+                    validMsg.textContent = '✅ RUT válido';
+                    this.parentNode.appendChild(validMsg);
+                }
+            } else {
+                this.style.borderColor = '';
+                this.style.backgroundColor = '';
+                const errorMsg = this.nextElementSibling;
+                if (errorMsg && errorMsg.classList && errorMsg.classList.contains('rut-error')) {
+                    errorMsg.remove();
+                }
+                const validMsg = this.nextElementSibling;
+                if (validMsg && validMsg.classList && validMsg.classList.contains('rut-valid')) {
+                    validMsg.remove();
+                }
+            }
+        });
+        
+        // Limpiar validación al escribir
+        rutInput.addEventListener('input', function() {
+            this.style.borderColor = '';
+            this.style.backgroundColor = '';
+            const errorMsg = this.nextElementSibling;
+            if (errorMsg && errorMsg.classList && errorMsg.classList.contains('rut-error')) {
+                errorMsg.remove();
+            }
+            const validMsg = this.nextElementSibling;
+            if (validMsg && validMsg.classList && validMsg.classList.contains('rut-valid')) {
+                validMsg.remove();
+            }
+        });
+    }
+}
