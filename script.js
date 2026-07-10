@@ -1928,6 +1928,8 @@ function clearFilters() {
         btnNoGestionables.textContent = '🚫 Ocultar No Gestionables';
     }
 
+
+
     if (typeof soloSinProgramacion !== 'undefined' && soloSinProgramacion) {
         filtered = filtered.filter(p => {
             const fechaEstatusProgram = (p.fechaEstatusProgram || '').toString().trim();
@@ -2124,10 +2126,111 @@ function calcularDiasEspera(fechaStr) {
 
 //descargas
 
-// ====================== DESCARGAR COMO CSV ======================
+// ====================== OBTENER DATOS FILTRADOS (VERSIÓN COMPLETA) ======================
+function getCurrentFilteredData() {
+    const busqueda = (document.getElementById('busquedaGeneral')?.value || '').toLowerCase().trim();
+    const especialidad = document.getElementById('filterEspecialidad')?.value || '';
+    const medico = document.getElementById('filterMedico')?.value || '';
+    const estatus = document.getElementById('filterEstatus')?.value || '';
+    const prioridad = document.getElementById('filterPrioridad')?.value || '';
+    const ges = document.getElementById('filterGes')?.value || '';
+    const comuna = document.getElementById('filterComuna')?.value || '';
+    const fechaDesde = document.getElementById('filterFechaDesde')?.value || '';
+    const fechaHasta = document.getElementById('filterFechaHasta')?.value || '';
+
+    let filtered = [...patients];
+
+    // 1. Búsqueda general
+    if (busqueda) {
+        filtered = filtered.filter(p => {
+            const texto = `${p.nombreApellido || ''} ${p.rut || ''} ${p.diagnostico || ''} ${p.intervencion || ''} ${p.especialidad || ''} ${p.medicoTratante || ''}`.toLowerCase();
+            return texto.includes(busqueda);
+        });
+    }
+
+    // 2. Filtros exactos
+    if (especialidad) filtered = filtered.filter(p => p.especialidad === especialidad);
+    if (medico) filtered = filtered.filter(p => p.medicoTratante === medico);
+    if (estatus) filtered = filtered.filter(p => p.estatusTabla === estatus);
+    if (prioridad) filtered = filtered.filter(p => p.prioridad === prioridad);
+    if (ges) filtered = filtered.filter(p => p.ges === ges);
+    if (comuna) filtered = filtered.filter(p => p.comuna === comuna);
+
+    // 3. Rango de fechas
+    if (fechaDesde || fechaHasta) {
+        filtered = filtered.filter(p => {
+            const fechaInd = new Date(p.fechaIndQx || 0);
+            let pasa = true;
+            if (fechaDesde && fechaInd < new Date(fechaDesde)) pasa = false;
+            if (fechaHasta && fechaInd > new Date(fechaHasta)) pasa = false;
+            return pasa;
+        });
+    }
+
+    // 4. Solo Sin Folio
+    if (soloSinFolio) {
+        filtered = filtered.filter(p => {
+            const folio = (p.folio || '').toString().trim();
+            return folio === '';
+        });
+    }
+
+    // 5. Solo Sin Programación
+    if (soloSinProgramacion) {
+        filtered = filtered.filter(p => {
+            const fechaEstatusProgram = (p.fechaEstatusProgram || '').toString().trim();
+            return fechaEstatusProgram === '';
+        });
+    }
+
+    // 6. Ocultar No Gestionables
+    if (ocultarNoGestionables) {
+        const noGestionables = ["EGRESO", "RECHAZO", "TRASLADO INTERNO", "OPERADO", "egreso", "rechazo", "traslado interno", "operado"];
+        filtered = filtered.filter(p => {
+            const estatusPaciente = (p.estatusTabla || '').toString().trim().toUpperCase();
+            return !noGestionables.includes(estatusPaciente);
+        });
+    }
+
+    // 7. Filtro por Percentil
+    if (filtroPercentil) {
+        filtered = filtered.filter(p => {
+            let dias;
+            if (fuentePercentilLista === 'fechaEstatusProgram') {
+                dias = calculateWaitingDays(p.fechaEstatusProgram);
+            } else {
+                dias = calculateWaitingDays(p.fechaIndQx);
+            }
+            
+            if (dias <= 0) return false;
+            
+            if (filtroPercentil === 'p25' && dias > percentilesGlobales.p25) return false;
+            if (filtroPercentil === 'p50' && (dias <= percentilesGlobales.p25 || dias > percentilesGlobales.p50)) return false;
+            if (filtroPercentil === 'p75' && (dias <= percentilesGlobales.p50 || dias > percentilesGlobales.p75)) return false;
+            if (filtroPercentil === 'p90' && (dias <= percentilesGlobales.p75 || dias > percentilesGlobales.p90)) return false;
+            if (filtroPercentil === 'resto' && dias <= percentilesGlobales.p90) return false;
+            
+            return true;
+        });
+    }
+
+    // 8. Duplicados
+    if (mostrarDuplicados) {
+        const rutCount = {};
+        filtered.forEach(p => {
+            if (p.rut) rutCount[p.rut] = (rutCount[p.rut] || 0) + 1;
+        });
+        filtered = filtered.filter(p => p.rut && rutCount[p.rut] > 1);
+        filtered.sort((a, b) => (a.rut || '').localeCompare(b.rut || ''));
+    }
+
+    return filtered;
+}
+
+// ====================== DESCARGAR COMO CSV (ACTUALIZADO) ======================
 function downloadCSV() {
     const data = getCurrentFilteredData();
-    if (data.length === 0) return alert("No hay datos para descargar.");
+    if (data.length === 0) return alert("No hay datos para descargar con los filtros actuales.");
 
     let csvContent = "ID;Estatus Tabla;T.Espera;Fecha Ind Qx;Nombre y Apellido;RUT;Edad;Comuna;Especialidad;Médico Tratante;Diagnóstico;Intervención;Fecha Cirugía;Observaciones\n";
 
@@ -2139,16 +2242,16 @@ function downloadCSV() {
     const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `Pacientes_${new Date().toISOString().slice(0,10)}.csv`;
+    link.download = `Pacientes_Filtrados_${new Date().toISOString().slice(0,10)}.csv`;
     link.click();
 
-    alert(`✅ CSV descargado (${data.length} registros)`);
+    alert(`✅ CSV descargado (${data.length} registros con filtros aplicados)`);
 }
 
-// ====================== DESCARGAR EXCEL COMPLETO (TODAS LAS COLUMNAS) ======================
+// ====================== DESCARGAR EXCEL COMPLETO (ACTUALIZADO) ======================
 function downloadExcel() {
     const data = getCurrentFilteredData();
-    if (data.length === 0) return alert("No hay datos para descargar.");
+    if (data.length === 0) return alert("No hay datos para descargar con los filtros actuales.");
 
     // Mapeo completo de todas las columnas
     const excelData = data.map(p => ({
@@ -2196,54 +2299,10 @@ function downloadExcel() {
     XLSX.utils.book_append_sheet(wb, ws, "Pacientes");
 
     // Descargar
-    XLSX.writeFile(wb, `Pacientes_Completo_${new Date().toISOString().slice(0,10)}.xlsx`);
+    XLSX.writeFile(wb, `Pacientes_Filtrados_${new Date().toISOString().slice(0,10)}.xlsx`);
 
-    alert(`✅ Excel completo descargado correctamente (${data.length} registros)`);
+    alert(`✅ Excel completo descargado correctamente (${data.length} registros con filtros aplicados)`);
 }
-// ====================== OBTENER DATOS FILTRADOS ======================
-function getCurrentFilteredData() {
-    const busqueda = (document.getElementById('busquedaGeneral')?.value || '').toLowerCase().trim();
-    const especialidad = document.getElementById('filterEspecialidad').value;
-    const medico = document.getElementById('filterMedico').value;
-    const estatus = document.getElementById('filterEstatus').value;
-    const prioridad = document.getElementById('filterPrioridad')?.value || '';
-    const fechaDesde = document.getElementById('filterFechaDesde').value;
-    const fechaHasta = document.getElementById('filterFechaHasta').value;
-
-    return patients.filter(p => {
-        let pasa = true;
-
-        if (busqueda) {
-            const texto = `${p.nombreApellido || ''} ${p.rut || ''} ${p.diagnostico || ''} ${p.intervencion || ''} ${p.especialidad || ''} ${p.medicoTratante || ''}`.toLowerCase();
-            if (!texto.includes(busqueda)) pasa = false;
-        }
-        if (especialidad && p.especialidad !== especialidad) pasa = false;
-        if (medico && p.medicoTratante !== medico) pasa = false;
-        if (estatus && p.estatusTabla !== estatus) pasa = false;
-        if (prioridad && p.prioridad !== prioridad) pasa = false;
-
-        if (fechaDesde || fechaHasta) {
-            const fechaInd = new Date(p.fechaIndQx || 0);
-            if (fechaDesde && fechaInd < new Date(fechaDesde)) pasa = false;
-            if (fechaHasta && fechaInd > new Date(fechaHasta)) pasa = false;
-        }
-        if (soloSinFolio) {
-            const folio = (p.folio || '').toString().trim();
-            if (folio !== '') pasa = false;
-        }
-
-        if (ocultarNoGestionables) {
-            const noGestionables = ["EGRESO", "RECHAZO", "TRASLADO INTERNO", "OPERADO", "egreso", "rechazo", "traslado interno", "operado"];
-            const estatusPaciente = (p.estatusTabla || '').toString().trim().toUpperCase();
-            if (noGestionables.includes(estatusPaciente)) {
-                pasa = false;
-            }
-        }
-
-        return pasa;
-    });
-}
-
 
 
 // ====================== FORMATEAR TODOS LOS RUTs CON MODAL DE CARGA ======================
@@ -3872,53 +3931,22 @@ async function adminEliminarComuna() {
 
 // ====================== IMPRIMIR LISTA DE PACIENTES FILTRADA ======================
 function printPatientList() {
-    // Obtener los pacientes filtrados actualmente
-    const busqueda = (document.getElementById('busquedaGeneral')?.value || '').toLowerCase().trim();
-    const especialidad = document.getElementById('filterEspecialidad').value;
-    const medico = document.getElementById('filterMedico').value;
-    const estatus = document.getElementById('filterEstatus').value;
-      const prioridad = document.getElementById('filterPrioridad')?.value || '';
-    const comuna = document.getElementById('filterComuna')?.value || '';
-    const fechaDesde = document.getElementById('filterFechaDesde').value;
-    const fechaHasta = document.getElementById('filterFechaHasta').value;
-
-    let filtered = patients.filter(p => {
-        let pasa = true;
-
-        if (busqueda) {
-            const texto = `${p.nombreApellido || ''} ${p.rut || ''} ${p.diagnostico || ''} ${p.intervencion || ''} ${p.especialidad || ''} ${p.medicoTratante || ''}`.toLowerCase();
-            if (!texto.includes(busqueda)) pasa = false;
-        }
-        if (especialidad && p.especialidad !== especialidad) pasa = false;
-        if (medico && p.medicoTratante !== medico) pasa = false;
-        if (estatus && p.estatusTabla !== estatus) pasa = false;
-        if (prioridad && p.prioridad !== prioridad) pasa = false;
-        if (comuna && p.comuna !== comuna) pasa = false;
-        if (fechaDesde || fechaHasta) {
-            const fechaInd = new Date(p.fechaIndQx || 0);
-            if (fechaDesde && fechaInd < new Date(fechaDesde)) pasa = false;
-            if (fechaHasta && fechaInd > new Date(fechaHasta)) pasa = false;
-        }
-        if (soloSinFolio) {
-            const folio = (p.folio || '').toString().trim();
-            if (folio !== '') pasa = false;
-        }
-
-        if (ocultarNoGestionables) {
-            const noGestionables = ["EGRESO", "RECHAZO", "TRASLADO INTERNO", "OPERADO", "egreso", "rechazo", "traslado interno", "operado"];
-            const estatusPaciente = (p.estatusTabla || '').toString().trim().toUpperCase();
-            if (noGestionables.includes(estatusPaciente)) {
-                pasa = false;
-            }
-        }
-        return pasa;
-    });
+    // Obtener los pacientes filtrados actualmente usando la misma función que CSV/Excel
+    const filtered = getCurrentFilteredData();  // ✅ AHORA USA LA MISMA FUNCIÓN
+    
+    if (filtered.length === 0) {
+        alert("❌ No hay pacientes en la lista actual. Revisa los filtros aplicados.");
+        return;
+    }
 
     // Ordenar por T. Espera (ascendente)
     filtered.sort((a, b) => calculateWaitingDays(a.fechaIndQx) - calculateWaitingDays(b.fechaIndQx));
 
     // Generar HTML para impresión
     const printWindow = window.open('', '_blank');
+    
+    // Obtener texto de filtros para mostrar
+    const textoFiltros = obtenerTextoFiltros();
     
     let tablaHTML = `
         <!DOCTYPE html>
@@ -4025,8 +4053,7 @@ function printPatientList() {
             </div>
             
             <div class="filters-info">
-                <p><strong>📋 Filtros aplicados:</strong></p>
-                <p>${busqueda ? `🔍 Búsqueda: ${busqueda} | ` : ''}${especialidad ? `🏥 Especialidad: ${especialidad} | ` : ''}${medico ? `👨‍⚕️ Médico: ${medico} | ` : ''}${estatus ? `📊 Estatus: ${estatus} | ` : ''}${comuna ? `🏠 Comuna: ${comuna} | ` : ''}${fechaDesde ? `📅 Desde: ${fechaDesde} | ` : ''}${fechaHasta ? `📅 Hasta: ${fechaHasta}` : ''}</p>
+                <p><strong>📋 Filtros aplicados:</strong> ${textoFiltros}</p>
                 <p>✅ Total de registros encontrados: <strong>${filtered.length}</strong></p>
             </div>
             
@@ -4035,6 +4062,7 @@ function printPatientList() {
                     <tr>
                         <th>ID</th>
                         <th>Fecha Ind. Qx</th>
+                        <th>T. Espera</th>
                         <th>Nombre y Apellido</th>
                         <th>RUT</th>
                         <th>Diagnóstico</th>
@@ -4047,10 +4075,12 @@ function printPatientList() {
 
     // Agregar filas de pacientes
     filtered.forEach(patient => {
+        const diasEspera = calculateWaitingDays(patient.fechaIndQx);
         tablaHTML += `
             <tr>
                 <td>${patient.id || '-'}</td>
                 <td>${patient.fechaIndQx ? formatDate(patient.fechaIndQx) : '-'}</td>
+                <td><strong>${diasEspera}</strong></td>
                 <td>${patient.nombreApellido || '-'}</td>
                 <td>${patient.rut || '-'}</td>
                 <td>${(patient.diagnostico || '-').substring(0, 50)}${(patient.diagnostico || '').length > 50 ? '...' : ''}</td>
@@ -7251,4 +7281,44 @@ function setupRutValidation() {
             }
         });
     }
+}
+
+// ====================== OBTENER TEXTO DE FILTROS APLICADOS ======================
+function obtenerTextoFiltros() {
+    const busqueda = (document.getElementById('busquedaGeneral')?.value || '').trim();
+    const especialidad = document.getElementById('filterEspecialidad')?.value || '';
+    const medico = document.getElementById('filterMedico')?.value || '';
+    const estatus = document.getElementById('filterEstatus')?.value || '';
+    const prioridad = document.getElementById('filterPrioridad')?.value || '';
+    const ges = document.getElementById('filterGes')?.value || '';
+    const comuna = document.getElementById('filterComuna')?.value || '';
+    const fechaDesde = document.getElementById('filterFechaDesde')?.value || '';
+    const fechaHasta = document.getElementById('filterFechaHasta')?.value || '';
+    
+    const filtros = [];
+    if (busqueda) filtros.push(`🔍 Búsqueda: "${busqueda}"`);
+    if (especialidad) filtros.push(`🏥 Especialidad: ${especialidad}`);
+    if (medico) filtros.push(`👨‍⚕️ Médico: ${medico}`);
+    if (estatus) filtros.push(`📊 Estatus: ${estatus}`);
+    if (prioridad) filtros.push(`⚠️ Prioridad: ${prioridad}`);
+    if (ges) filtros.push(`✅ GES: ${ges}`);
+    if (comuna) filtros.push(`🏠 Comuna: ${comuna}`);
+    if (fechaDesde) filtros.push(`📅 Desde: ${fechaDesde}`);
+    if (fechaHasta) filtros.push(`📅 Hasta: ${fechaHasta}`);
+    if (soloSinFolio) filtros.push(`📄 Solo sin folio`);
+    if (soloSinProgramacion) filtros.push(`📅 Solo sin fecha programación`);
+    if (ocultarNoGestionables) filtros.push(`🚫 Ocultando No Gestionables`);
+    if (mostrarDuplicados) filtros.push(`🔄 Mostrando duplicados`);
+    if (filtroPercentil) {
+        const nombres = {
+            'p25': 'Percentil 25 (≤ P25)',
+            'p50': 'Percentil 50 (P25-P50)',
+            'p75': 'Percentil 75 (P50-P75)',
+            'p90': 'Percentil 90 (P75-P90)',
+            'resto': 'Resto (> P90)'
+        };
+        filtros.push(`📊 ${nombres[filtroPercentil] || filtroPercentil}`);
+    }
+    
+    return filtros.length > 0 ? filtros.join(' | ') : 'Ningún filtro aplicado';
 }
