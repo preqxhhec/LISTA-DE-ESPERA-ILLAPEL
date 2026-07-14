@@ -36,6 +36,7 @@ let patients = [];
 let currentPatientKey = null;
 let currentModalPatient = null;
 let ocultarNoGestionables = false;
+let mostrarMultiEspecialidad = false;
 
 // Especialistas
 const especialistas = {
@@ -78,6 +79,22 @@ function calculateWaitingDays(startDate) {
 
     return Math.ceil((today - start) / (1000 * 60 * 60 * 24));
 }
+
+
+
+// ====================== FUNCIÓN AUXILIAR PARA VERIFICAR SI UN PACIENTE ES GESTIONABLE ======================
+function esGestionable(paciente) {
+    if (!paciente || !paciente.estatusTabla) return true;
+    const noGestionables = ["EGRESO", "RECHAZO", "TRASLADO INTERNO", "OPERADO", "egreso", "rechazo", "traslado interno", "operado"];
+    const estatus = paciente.estatusTabla.toString().trim().toUpperCase();
+    return !noGestionables.includes(estatus);
+}
+
+
+
+
+
+
 
 function filterMedicos() {
     const especialidad = document.getElementById('especialidad').value;
@@ -158,6 +175,69 @@ function validarRutChileno(rut) {
     
     return dv === dvCalculado;
 }
+
+// ====================== VALIDACIÓN DE RUT LIMPIA (SIN DUPLICADOS) ======================
+function setupRutValidationLimpio(inputElement) {
+    if (!inputElement) return;
+    
+    // Eliminar todos los event listeners anteriores clonando el elemento
+    const cleanInput = inputElement.cloneNode(true);
+    inputElement.parentNode.replaceChild(cleanInput, inputElement);
+    
+    // Función para limpiar mensajes
+    function limpiarMensajes() {
+        const parent = cleanInput.parentNode;
+        const mensajes = parent.querySelectorAll('.rut-msg, .rut-error, .rut-valid');
+        mensajes.forEach(msg => msg.remove());
+        cleanInput.style.borderColor = '';
+        cleanInput.style.backgroundColor = '';
+    }
+    
+    // Evento blur (cuando pierde el foco)
+    cleanInput.addEventListener('blur', function() {
+        const rut = this.value;
+        const rutLimpio = rut ? rut.replace(/[^0-9kK]/g, '').toUpperCase() : '';
+        
+        limpiarMensajes();
+        
+        if (rut && !validarRutChileno(rutLimpio)) {
+            this.style.borderColor = '#ef4444';
+            this.style.backgroundColor = '#fee2e2';
+            const msg = document.createElement('small');
+            msg.className = 'rut-msg';
+            msg.style.color = '#ef4444';
+            msg.style.display = 'block';
+            msg.style.marginTop = '4px';
+            msg.textContent = '❌ RUT inválido. Verifica el formato.';
+            this.parentNode.appendChild(msg);
+        } else if (rut && validarRutChileno(rutLimpio)) {
+            this.value = formatRut(rutLimpio);
+            this.style.borderColor = '#10b981';
+            this.style.backgroundColor = '#ecfdf5';
+            const msg = document.createElement('small');
+            msg.className = 'rut-msg';
+            msg.style.color = '#10b981';
+            msg.style.display = 'block';
+            msg.style.marginTop = '4px';
+            msg.textContent = '✅ RUT válido';
+            this.parentNode.appendChild(msg);
+        }
+    });
+    
+    // Evento input (mientras escribe)
+    cleanInput.addEventListener('input', function() {
+        limpiarMensajes();
+    });
+    
+    return cleanInput;
+}
+
+
+
+
+
+
+
 
 // Login Form
 document.getElementById('loginForm').addEventListener('submit', (e) => {
@@ -488,8 +568,9 @@ function renderPatientsTable(data) {
     const tbody = document.getElementById('tableBody');
     tbody.innerHTML = '';
 
-    // Si estamos mostrando duplicados, ordenar por RUT (sin importar el estado)
-    if (mostrarDuplicados) {
+    // ========== NUEVO: SI DUPLICADOS O MULTI-ESPECIALIDAD ESTÁN ACTIVOS ==========
+    if (mostrarDuplicados || mostrarMultiEspecialidad) {
+        // Ordenar SOLO por RUT (agrupados)
         data.sort((a, b) => (a.rut || '').localeCompare(b.rut || ''));
     } 
     // SOLO ordenar si sortActive = true y hay una columna seleccionada
@@ -675,6 +756,15 @@ function makeTableSortable() {
             return;
         }
 
+        // ========== NUEVO: VERIFICAR SI DUPLICADOS O MULTI-ESPECIALIDAD ESTÁN ACTIVOS ==========
+        if (mostrarDuplicados || mostrarMultiEspecialidad) {
+            th.style.cursor = 'default';
+            th.onclick = null;  // Deshabilitar click
+            th.title = 'Ordenamiento deshabilitado cuando Duplicados o Multi-Especialidad están activos';
+            return;  // Salir del bucle para este encabezado
+        }
+        // ====================================================================================
+
         th.style.cursor = 'pointer';
         th.onclick = function() {
             // Si es la misma columna
@@ -718,7 +808,6 @@ function makeTableSortable() {
         }
     }
 }
-
 
 
 // ====================== ACTUALIZAR DASHBOARD COMPLETO ======================
@@ -1245,41 +1334,12 @@ function editCurrentPatient() {
     });
 
     // ========== VALIDAR RUT AUTOMÁTICAMENTE AL CARGAR ==========
-    const rutInput = document.getElementById('rut');
-    if (rutInput && rutInput.value) {
-        // Limpiar mensajes anteriores
-        let msg = rutInput.nextElementSibling;
-        if (msg && msg.classList && msg.classList.contains('rut-msg')) {
-            msg.remove();
-        }
-        
-        // Validar el RUT
-        const rut = rutInput.value;
-        const rutLimpio = rut ? rut.replace(/[^0-9kK]/g, '').toUpperCase() : '';
-        
-        if (!rutLimpio || !validarRutChileno(rutLimpio)) {
-            rutInput.style.borderColor = '#ef4444';
-            rutInput.style.backgroundColor = '#fee2e2';
-            msg = document.createElement('small');
-            msg.className = 'rut-msg';
-            msg.style.color = '#ef4444';
-            msg.style.display = 'block';
-            msg.style.marginTop = '4px';
-            msg.textContent = '❌ RUT inválido';
-            rutInput.parentNode.appendChild(msg);
-        } else {
-            rutInput.style.borderColor = '#10b981';
-            rutInput.style.backgroundColor = '#ecfdf5';
-            msg = document.createElement('small');
-            msg.className = 'rut-msg';
-            msg.style.color = '#10b981';
-            msg.style.display = 'block';
-            msg.style.marginTop = '4px';
-            msg.textContent = '✅ RUT válido';
-            rutInput.parentNode.appendChild(msg);
-        }
-    }
-    // =========================================================
+const rutInput = document.getElementById('rut');
+if (rutInput) {
+    setupRutValidationLimpio(rutInput);
+}
+// =========================================================
+   
 
 
 
@@ -1738,20 +1798,73 @@ if (filtroPercentil) {
         return pasa;
     });
     
-  
+// ====================== FUNCIÓN AUXILIAR PARA VERIFICAR SI UN PACIENTE ES GESTIONABLE ======================
+function esGestionable(paciente) {
+    if (!paciente || !paciente.estatusTabla) return true;
+    const noGestionables = ["EGRESO", "RECHAZO", "TRASLADO INTERNO", "OPERADO", "egreso", "rechazo", "traslado interno", "operado"];
+    const estatus = paciente.estatusTabla.toString().trim().toUpperCase();
+    return !noGestionables.includes(estatus);
+}
 
-    // ==================== FILTRO DE DUPLICADOS ====================
-    if (mostrarDuplicados) {
-        const rutCount = {};
-        filtered.forEach(p => {
-            if (p.rut) rutCount[p.rut] = (rutCount[p.rut] || 0) + 1;
-        });
+// ==================== FILTRO DE DUPLICADOS Y MULTI-ESPECIALIDAD ====================
 
-        filtered = filtered.filter(p => p.rut && rutCount[p.rut] > 1);
+// --- CASO 1: DUPLICADOS POR ESPECIALIDAD (mismo RUT + misma Especialidad) ---
+if (mostrarDuplicados) {
+    // 1. Filtrar SOLO pacientes GESTIONABLES para el conteo
+    const gestionables = filtered.filter(p => esGestionable(p));
+    
+    // 2. Crear clave compuesta: RUT + Especialidad
+    const claveCount = {};
+    gestionables.forEach(p => {
+        if (p.rut) {
+            const clave = `${p.rut}|${p.especialidad || 'SIN_ESPECIALIDAD'}`;
+            claveCount[clave] = (claveCount[clave] || 0) + 1;
+        }
+    });
+    
+    // 3. Filtrar SOLO los pacientes que tienen duplicados (misma RUT + misma Especialidad)
+    filtered = filtered.filter(p => {
+        if (!p.rut) return false;
+        if (!esGestionable(p)) return false;  // ← EXCLUIR NO GESTIONABLES
+        const clave = `${p.rut}|${p.especialidad || 'SIN_ESPECIALIDAD'}`;
+        return claveCount[clave] > 1;
+    });
+    
+    // 4. Ordenar por RUT
+    filtered.sort((a, b) => (a.rut || '').localeCompare(b.rut || ''));
+}
 
-        // Ordenamiento fuerte por RUT (agrupados)
-        filtered.sort((a, b) => (a.rut || '').localeCompare(b.rut || ''));
-    }
+// --- CASO 2: MULTI-ESPECIALIDAD (mismo RUT en diferentes especialidades) ---
+if (mostrarMultiEspecialidad) {
+    // 1. Filtrar SOLO pacientes GESTIONABLES para el conteo
+    const gestionables = filtered.filter(p => esGestionable(p));
+    
+    // 2. Agrupar por RUT para ver cuántas especialidades diferentes tiene
+    const rutEspecialidades = {};
+    gestionables.forEach(p => {
+        if (p.rut) {
+            if (!rutEspecialidades[p.rut]) {
+                rutEspecialidades[p.rut] = new Set();
+            }
+            rutEspecialidades[p.rut].add(p.especialidad || 'SIN_ESPECIALIDAD');
+        }
+    });
+    
+    // 3. Identificar RUTs que tienen MÁS DE UNA especialidad
+    const rutsMultiEsp = Object.keys(rutEspecialidades).filter(
+        rut => rutEspecialidades[rut].size > 1
+    );
+    
+    // 4. Filtrar SOLO pacientes que tienen múltiples especialidades Y SON GESTIONABLES
+    filtered = filtered.filter(p => {
+        if (!p.rut) return false;
+        if (!esGestionable(p)) return false;  // ← EXCLUIR NO GESTIONABLES
+        return rutsMultiEsp.includes(p.rut);
+    });
+    
+    // 5. Ordenar por RUT
+    filtered.sort((a, b) => (a.rut || '').localeCompare(b.rut || ''));
+}
 
     renderPatientsTable(filtered);
     mostrarContadorResultados(filtered.length);
@@ -1826,26 +1939,81 @@ function toggleSinFolio() {
     
 }
 
+// ====================== TOGGLE DUPLICADOS ======================
+// ====================== TOGGLE DUPLICADOS ======================
 function toggleDuplicados() {
     mostrarDuplicados = !mostrarDuplicados;
     const btn = document.getElementById('btnDuplicados');
+    
+    // Si activamos duplicados, desactivamos multi-especialidad
+    if (mostrarDuplicados && mostrarMultiEspecialidad) {
+        mostrarMultiEspecialidad = false;
+        const btnMulti = document.getElementById('btnMultiEspecialidad');
+        if (btnMulti) {
+            btnMulti.style.background = '';
+            btnMulti.style.color = '';
+            btnMulti.textContent = '🔀 Multi-Especialidad';
+        }
+    }
     
     if (btn) {
         if (mostrarDuplicados) {
             btn.style.background = '#eab308';
             btn.style.color = 'black';
-            btn.textContent = '✅ Mostrando Duplicados (agrupados)';
+            btn.textContent = '✅ Duplicados ACTIVADO';
         } else {
             btn.style.background = '';
             btn.style.color = '';
-            btn.textContent = 'Mostrar Duplicados (RUT)';
+            btn.textContent = 'Duplicados (RUT+Esp)';
         }
     }
     
     filterPatients();
     guardarFiltrosEnStorage();
+    
+    // ========== NUEVO: ACTUALIZAR ENCABEZADOS ==========
+    setTimeout(() => {
+        makeTableSortable();
+    }, 100);
 }
 
+
+// ====================== TOGGLE MULTI-ESPECIALIDAD ======================
+function toggleMultiEspecialidad() {
+    mostrarMultiEspecialidad = !mostrarMultiEspecialidad;
+    const btn = document.getElementById('btnMultiEspecialidad');
+    
+    // Si activamos multi-especialidad, desactivamos duplicados
+    if (mostrarMultiEspecialidad && mostrarDuplicados) {
+        mostrarDuplicados = false;
+        const btnDuplicados = document.getElementById('btnDuplicados');
+        if (btnDuplicados) {
+            btnDuplicados.style.background = '';
+            btnDuplicados.style.color = '';
+            btnDuplicados.textContent = 'Duplicados (RUT+Esp)';
+        }
+    }
+    
+    if (btn) {
+        if (mostrarMultiEspecialidad) {
+            btn.style.background = '#8b5cf6';
+            btn.style.color = 'white';
+            btn.textContent = '✅ Multi-Especialidad ACTIVADO';
+        } else {
+            btn.style.background = '';
+            btn.style.color = '';
+            btn.textContent = '🔀 Multi-Especialidad';
+        }
+    }
+    
+    filterPatients();
+    guardarFiltrosEnStorage();
+    
+    // ========== NUEVO: ACTUALIZAR ENCABEZADOS ==========
+    setTimeout(() => {
+        makeTableSortable();
+    }, 100);
+}
 
 function toggleNoGestionables() {
     ocultarNoGestionables = !ocultarNoGestionables;
@@ -1874,6 +2042,7 @@ function clearFilters() {
     ocultarNoGestionables = false;
     soloSinProgramacion = false;
     filtroPercentil = '';
+    mostrarMultiEspecialidad = false;
 
     document.getElementById('busquedaGeneral').value = '';
     document.getElementById('filterEspecialidad').value = '';
@@ -1890,7 +2059,7 @@ function clearFilters() {
     const selectFuente = document.getElementById('fuentePercentilLista');
     if (selectFuente) {
         selectFuente.value = 'fechaIndQx';
-        selectFuente.dispatchEvent(new Event('change'));  // Forzar actualización visual
+        selectFuente.dispatchEvent(new Event('change'));
     }
 
     // ========== Restablecer ordenamiento a orden por defecto ==========
@@ -1906,6 +2075,7 @@ function clearFilters() {
     const btnDuplicados = document.getElementById('btnDuplicados');
     const btnSinProgramacion = document.getElementById('btnSinProgramacion');
     const btnNoGestionables = document.getElementById('btnNoGestionables');
+    const btnMulti = document.getElementById('btnMultiEspecialidad');
     
     if (btnSinFolio) {
         btnSinFolio.style.background = '';
@@ -1927,8 +2097,11 @@ function clearFilters() {
         btnNoGestionables.style.color = 'white';
         btnNoGestionables.textContent = '🚫 Ocultar No Gestionables';
     }
-
-
+    if (btnMulti) {
+        btnMulti.style.background = '';
+        btnMulti.style.color = '';
+        btnMulti.textContent = '🔀 Multi-Especialidad';
+    }
 
     if (typeof soloSinProgramacion !== 'undefined' && soloSinProgramacion) {
         filtered = filtered.filter(p => {
@@ -1938,6 +2111,11 @@ function clearFilters() {
     }
     
     filterPatients();
+    
+    // ========== NUEVO: RESTAURAR ENCABEZADOS ==========
+    setTimeout(() => {
+        makeTableSortable();
+    }, 100);
 }
 
 
@@ -2216,13 +2394,62 @@ function getCurrentFilteredData() {
 
     // 8. Duplicados
     if (mostrarDuplicados) {
-        const rutCount = {};
-        filtered.forEach(p => {
-            if (p.rut) rutCount[p.rut] = (rutCount[p.rut] || 0) + 1;
-        });
-        filtered = filtered.filter(p => p.rut && rutCount[p.rut] > 1);
-        filtered.sort((a, b) => (a.rut || '').localeCompare(b.rut || ''));
-    }
+    // 1. Filtrar SOLO pacientes GESTIONABLES para el conteo
+    const gestionables = filtered.filter(p => esGestionable(p));
+    
+    // 2. Crear clave compuesta: RUT + Especialidad
+    const claveCount = {};
+    gestionables.forEach(p => {
+        if (p.rut) {
+            const clave = `${p.rut}|${p.especialidad || 'SIN_ESPECIALIDAD'}`;
+            claveCount[clave] = (claveCount[clave] || 0) + 1;
+        }
+    });
+    
+    // 3. Filtrar SOLO los pacientes que tienen duplicados (misma RUT + misma Especialidad)
+    filtered = filtered.filter(p => {
+        if (!p.rut) return false;
+        if (!esGestionable(p)) return false;
+        const clave = `${p.rut}|${p.especialidad || 'SIN_ESPECIALIDAD'}`;
+        return claveCount[clave] > 1;
+    });
+    
+    // 4. Ordenar por RUT
+    filtered.sort((a, b) => (a.rut || '').localeCompare(b.rut || ''));
+}
+
+
+// 9. Multi-Especialidad (CORREGIDO)
+if (mostrarMultiEspecialidad) {
+    // 1. Filtrar SOLO pacientes GESTIONABLES para el conteo
+    const gestionables = filtered.filter(p => esGestionable(p));
+    
+    // 2. Agrupar por RUT para ver cuántas especialidades diferentes tiene
+    const rutEspecialidades = {};
+    gestionables.forEach(p => {
+        if (p.rut) {
+            if (!rutEspecialidades[p.rut]) {
+                rutEspecialidades[p.rut] = new Set();
+            }
+            rutEspecialidades[p.rut].add(p.especialidad || 'SIN_ESPECIALIDAD');
+        }
+    });
+    
+    // 3. Identificar RUTs que tienen MÁS DE UNA especialidad
+    const rutsMultiEsp = Object.keys(rutEspecialidades).filter(
+        rut => rutEspecialidades[rut].size > 1
+    );
+    
+    // 4. Filtrar SOLO pacientes que tienen múltiples especialidades Y SON GESTIONABLES
+    filtered = filtered.filter(p => {
+        if (!p.rut) return false;
+        if (!esGestionable(p)) return false;
+        return rutsMultiEsp.includes(p.rut);
+    });
+    
+    // 5. Ordenar por RUT
+    filtered.sort((a, b) => (a.rut || '').localeCompare(b.rut || ''));
+}
 
     return filtered;
 }
@@ -3001,6 +3228,23 @@ function actualizarBotonesFiltrosVisuales() {
             btnNoGestionables.textContent = '🚫 Ocultar No Gestionables';
         }
     }
+
+
+    // Multi-Especialidad
+    const btnMulti = document.getElementById('btnMultiEspecialidad');
+    if (btnMulti) {
+        if (mostrarMultiEspecialidad) {
+            btnMulti.style.background = '#8b5cf6';
+            btnMulti.style.color = 'white';
+            btnMulti.textContent = '✅ Multi-Especialidad ACTIVADO';
+        } else {
+            btnMulti.style.background = '';
+            btnMulti.style.color = '';
+            btnMulti.textContent = '🔀 Multi-Especialidad';
+        }
+    }
+
+
 }
 
 
@@ -5847,8 +6091,8 @@ async function descargarRegistroLlamadas() {
         return;
     }
     
-    // Obtener los pacientes actualmente filtrados en la tabla
-    const pacientesFiltrados = obtenerPacientesFiltrados();
+    // ✅ CORREGIDO: Usar getCurrentFilteredData() que incluye TODOS los filtros
+    const pacientesFiltrados = getCurrentFilteredData();
     
     if (pacientesFiltrados.length === 0) {
         alert("❌ No hay pacientes en la lista actual. Revisa los filtros aplicados.");
@@ -6086,8 +6330,8 @@ async function imprimirRegistroLlamadas() {
         return;
     }
     
-    // Obtener los pacientes actualmente filtrados en la tabla
-    const pacientesFiltrados = obtenerPacientesFiltrados();
+    // ✅ CORREGIDO: Usar getCurrentFilteredData() que incluye TODOS los filtros
+    const pacientesFiltrados = getCurrentFilteredData();
     
     if (pacientesFiltrados.length === 0) {
         alert("❌ No hay pacientes en la lista actual. Revisa los filtros aplicados.");
@@ -7137,6 +7381,7 @@ let lastFilters = {
     mostrarDuplicados: false,
     soloSinProgramacion: false,
     ocultarNoGestionables: false, 
+      mostrarMultiEspecialidad: false,
     filtroPercentil: '',
     fuentePercentilDashboard: 'fechaIndQx',
     fuentePercentilLista: 'fechaIndQx'
@@ -7153,6 +7398,7 @@ function cargarFiltrosDesdeStorage() {
         mostrarDuplicados = !!lastFilters.mostrarDuplicados;
         soloSinProgramacion = !!lastFilters.soloSinProgramacion;
          ocultarNoGestionables = !!lastFilters.ocultarNoGestionables;
+         mostrarMultiEspecialidad = !!lastFilters.mostrarMultiEspecialidad;
         filtroPercentil = lastFilters.filtroPercentil || '';
         
         fuentePercentilLista = lastFilters.fuentePercentilLista || 'fechaIndQx';
@@ -7175,6 +7421,7 @@ function guardarFiltrosEnStorage() {
         mostrarDuplicados: !!mostrarDuplicados,
         soloSinProgramacion: !!soloSinProgramacion,
         ocultarNoGestionables: !!ocultarNoGestionables,
+        mostrarMultiEspecialidad: !!mostrarMultiEspecialidad, 
         filtroPercentil: filtroPercentil || '',
       
         fuentePercentilLista: fuentePercentilLista || 'fechaIndQx'
@@ -7204,6 +7451,20 @@ function restaurarFiltros() {
         if (radioEst) radioEst.checked = (fuentePercentilDashboard === 'fechaEstatusProgram');
         if (selectLista) selectLista.value = fuentePercentilLista;
 
+        // ✅ RESTAURAR ESTADO DEL BOTÓN MULTI-ESPECIALIDAD
+        const btnMulti = document.getElementById('btnMultiEspecialidad');
+        if (btnMulti) {
+            if (mostrarMultiEspecialidad) {
+                btnMulti.style.background = '#8b5cf6';
+                btnMulti.style.color = 'white';
+                btnMulti.textContent = '✅ Multi-Especialidad ACTIVADO';
+            } else {
+                btnMulti.style.background = '';
+                btnMulti.style.color = '';
+                btnMulti.textContent = '🔀 Multi-Especialidad';
+            }
+        }
+
         actualizarBotonesFiltrosVisuales();
         filterPatients();
 
@@ -7214,72 +7475,9 @@ function restaurarFiltros() {
 
 // ====================== VALIDACIÓN DE RUT EN TIEMPO REAL ======================
 function setupRutValidation() {
-    // Validar RUT en el formulario de nuevo paciente
     const rutInput = document.getElementById('rut');
     if (rutInput) {
-        rutInput.addEventListener('blur', function() {
-            const rut = this.value;
-            if (rut && !validarRutChileno(rut)) {
-                this.style.borderColor = '#ef4444';
-                this.style.backgroundColor = '#fee2e2';
-                // Mostrar mensaje de error
-                let errorMsg = this.nextElementSibling;
-                if (!errorMsg || !errorMsg.classList.contains('rut-error')) {
-                    errorMsg = document.createElement('small');
-                    errorMsg.className = 'rut-error';
-                    errorMsg.style.color = '#ef4444';
-                    errorMsg.style.display = 'block';
-                    errorMsg.style.marginTop = '4px';
-                    errorMsg.textContent = '❌ RUT inválido. Verifica el formato.';
-                    this.parentNode.appendChild(errorMsg);
-                }
-            } else if (rut && validarRutChileno(rut)) {
-                // RUT válido - indicador verde
-                this.style.borderColor = '#10b981';
-                this.style.backgroundColor = '#ecfdf5';
-                // Limpiar mensaje de error si existe
-                const errorMsg = this.nextElementSibling;
-                if (errorMsg && errorMsg.classList && errorMsg.classList.contains('rut-error')) {
-                    errorMsg.remove();
-                }
-                // Mostrar indicador de válido
-                let validMsg = this.nextElementSibling;
-                if (!validMsg || !validMsg.classList.contains('rut-valid')) {
-                    validMsg = document.createElement('small');
-                    validMsg.className = 'rut-valid';
-                    validMsg.style.color = '#10b981';
-                    validMsg.style.display = 'block';
-                    validMsg.style.marginTop = '4px';
-                    validMsg.textContent = '✅ RUT válido';
-                    this.parentNode.appendChild(validMsg);
-                }
-            } else {
-                this.style.borderColor = '';
-                this.style.backgroundColor = '';
-                const errorMsg = this.nextElementSibling;
-                if (errorMsg && errorMsg.classList && errorMsg.classList.contains('rut-error')) {
-                    errorMsg.remove();
-                }
-                const validMsg = this.nextElementSibling;
-                if (validMsg && validMsg.classList && validMsg.classList.contains('rut-valid')) {
-                    validMsg.remove();
-                }
-            }
-        });
-        
-        // Limpiar validación al escribir
-        rutInput.addEventListener('input', function() {
-            this.style.borderColor = '';
-            this.style.backgroundColor = '';
-            const errorMsg = this.nextElementSibling;
-            if (errorMsg && errorMsg.classList && errorMsg.classList.contains('rut-error')) {
-                errorMsg.remove();
-            }
-            const validMsg = this.nextElementSibling;
-            if (validMsg && validMsg.classList && validMsg.classList.contains('rut-valid')) {
-                validMsg.remove();
-            }
-        });
+        setupRutValidationLimpio(rutInput);
     }
 }
 
@@ -7309,6 +7507,7 @@ function obtenerTextoFiltros() {
     if (soloSinProgramacion) filtros.push(`📅 Solo sin fecha programación`);
     if (ocultarNoGestionables) filtros.push(`🚫 Ocultando No Gestionables`);
     if (mostrarDuplicados) filtros.push(`🔄 Mostrando duplicados`);
+    if (mostrarMultiEspecialidad) filtros.push(`🔀 Multi-Especialidad (mismo RUT en diferentes especialidades)`);
     if (filtroPercentil) {
         const nombres = {
             'p25': 'Percentil 25 (≤ P25)',
